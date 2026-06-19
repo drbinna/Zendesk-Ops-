@@ -86,7 +86,6 @@ function Connect({ onConnected }: { onConnected: (c: Conn, d: ScanResult) => voi
 
   return (
     <motion.div {...rise}>
-      <Eyebrow>Connect</Eyebrow>
       <h1 className="font-heading text-3xl md:text-4xl font-bold tracking-tight leading-[1.05] mb-3">Point Anne at your <span style={{ color: HONEY }}>Zendesk.</span></h1>
       <p className="text-[15px] leading-relaxed text-muted-foreground max-w-prose mb-7">Enter your subdomain and an API token. We connect live and read your workspace. Nothing is stored.</p>
 
