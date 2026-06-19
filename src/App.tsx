@@ -24,14 +24,8 @@ export default function App() {
       <BlurredOrb className="!w-[30rem] !h-[30rem] absolute -bottom-40 -left-32 opacity-30 blur-[120px]" style={{ background: `radial-gradient(circle at 60% 40%, ${HONEY}, transparent 70%)` }} />
 
       <main className="relative w-full max-w-4xl rounded-[2rem] border border-border bg-card/80 backdrop-blur-xl shadow-2xl shadow-black/10 overflow-hidden">
-        <div className="flex items-center gap-3 px-5 py-3.5 text-[#EAF3F1]" style={{ background: "linear-gradient(180deg,#0E3A38,#0A4B49)" }}>
-          <span className="flex gap-1.5">
-            <i className="size-2.5 rounded-full" style={{ background: "#E8A85C" }} />
-            <i className="size-2.5 rounded-full bg-white/25" />
-            <i className="size-2.5 rounded-full bg-white/25" />
-          </span>
-          <span className="font-heading font-semibold text-sm">Goblin <span style={{ color: "#E8A85C" }}>Operator</span></span>
-          <span className="ml-auto flex items-center gap-2 font-mono text-[11px] text-white/60"><i className="size-1.5 rounded-full bg-emerald-300 animate-pulse" /> real-time</span>
+        <div className="flex items-center px-5 py-3.5 text-[#EAF3F1]" style={{ background: "linear-gradient(180deg,#0E3A38,#0A4B49)" }}>
+          <span className="font-heading font-semibold text-sm"><span style={{ color: "#E8A85C" }}>Anne</span> - A Zendesk operator</span>
         </div>
 
         <div className="min-h-[560px] p-8 md:p-11">
