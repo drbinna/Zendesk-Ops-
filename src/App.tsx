@@ -24,8 +24,9 @@ export default function App() {
       <BlurredOrb className="!w-[38rem] !h-[38rem] absolute -bottom-52 -left-40 opacity-60 blur-[100px]" style={{ background: `radial-gradient(circle at 60% 40%, #F0A94E, ${HONEY} 45%, transparent 72%)` }} />
 
       <main className="relative w-full max-w-4xl rounded-[2rem] border border-white/10 bg-card/85 backdrop-blur-xl shadow-2xl shadow-black/40 overflow-hidden">
-        <div className="flex items-center px-5 py-3.5 text-[#EAF3F1]" style={{ background: "linear-gradient(180deg,#0E3A38,#0A4B49)" }}>
-          <span className="font-heading font-semibold text-sm"><span style={{ color: "#E8A85C" }}>Anne</span> - A Zendesk operator</span>
+        <div className="flex items-center gap-3 px-5 py-2.5 text-[#EAF3F1]" style={{ background: "linear-gradient(180deg,#0E3A38,#0A4B49)" }}>
+          <span className="inline-flex items-center rounded-lg px-2.5 py-1" style={{ background: "#F7F3E7" }}><img src="/anne-wordmark.png" alt="Anne" className="h-6 w-auto block" /></span>
+          <span className="font-heading text-sm text-white/85">A Zendesk operator</span>
         </div>
 
         <div className="min-h-[560px] p-8 md:p-11">
