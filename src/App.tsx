@@ -94,7 +94,7 @@ function Connect({ onConnected }: { onConnected: (c: Conn, d: ScanResult) => voi
     <motion.div {...rise}>
       <Eyebrow>Connect</Eyebrow>
       <h1 className="font-heading text-3xl md:text-4xl font-bold tracking-tight leading-[1.05] mb-3">Point Anne at your <span style={{ color: HONEY }}>Zendesk.</span></h1>
-      <p className="text-[15px] leading-relaxed text-muted-foreground max-w-prose mb-7">Enter your subdomain and an API token. We connect live and read your workspace — nothing is stored.</p>
+      <p className="text-[15px] leading-relaxed text-muted-foreground max-w-prose mb-7">Enter your subdomain and an API token. We connect live and read your workspace. Nothing is stored.</p>
 
       <div className="grid md:grid-cols-[1.05fr_.95fr] gap-7">
         <form onSubmit={submit}>
@@ -114,13 +114,13 @@ function Connect({ onConnected }: { onConnected: (c: Conn, d: ScanResult) => voi
         <div className="rounded-2xl border border-border bg-muted/50 p-5 self-start">
           <h4 className="font-heading text-sm mb-4">What this does</h4>
           {([
-            [<Clock3 className="size-4" />, "Reads your tickets, groups, views, and fields", "so Anne understands your setup.", false],
-            [<RefreshCw className="size-4" />, "Acts only when you ask, gated by verification", "destructive writes pause for confirm.", true],
-            [<ShieldCheck className="size-4" />, "No storage", "credentials live in your browser for this session only.", false],
+            [<Clock3 className="size-4" />, "Reads your tickets, groups, views, and fields", "So Anne understands your setup.", false],
+            [<RefreshCw className="size-4" />, "Acts only when you ask, gated by verification", "Destructive writes pause for confirm.", true],
+            [<ShieldCheck className="size-4" />, "No storage", "Credentials live in your browser for this session only.", false],
           ] as [React.ReactNode, string, string, boolean][]).map(([icon, head, tail, warm2], i) => (
             <div key={i} className="flex gap-3 mb-3.5 last:mb-0">
               <span className="shrink-0 size-7 grid place-items-center rounded-lg" style={warm2 ? { background: "#F6ECD9", color: HONEY } : { background: "#E8F0EF", color: PETROL }}>{icon}</span>
-              <p className="text-[13px] leading-snug">{head} <span className="text-muted-foreground">— {tail}</span></p>
+              <p className="text-[13px] leading-snug">{head}. <span className="text-muted-foreground">{tail}</span></p>
             </div>
           ))}
         </div>
@@ -179,11 +179,11 @@ function Scan({ data, onChat, onReset }: { data: ScanResult; onChat: () => void;
 }
 
 function Chat({ conn, sub }: { conn: Conn; sub: string }) {
-  const [thread, setThread] = useState<ChatMsg[]>([{ role: "anne", text: `Connected to ${sub}.zendesk.com. Ask me to triage, search, update, or hand off a ticket. I'm in dry-run — flip the switch for live writes.` }]);
+  const [thread, setThread] = useState<ChatMsg[]>([{ role: "anne", text: "Anne is connected to your Zendesk. Ask her to triage, search, update, or hand off a ticket." }]);
   const [convo, setConvo] = useState<Msg[]>([]);
   const [calls, setCalls] = useState<TraceEntry[]>([]);
   const [embed, setEmbed] = useState<string | null>(null);
-  const [mode, setMode] = useState<"dry" | "live">("dry");
+  const mode = "live";
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -213,12 +213,6 @@ function Chat({ conn, sub }: { conn: Conn; sub: string }) {
     <motion.div {...rise} className="flex flex-col h-[560px] -m-1">
       <div className="flex items-center mb-4">
         <p className="font-mono text-[11px] uppercase tracking-[0.18em]" style={{ color: PETROL }}>Operate · {sub}.zendesk.com</p>
-        <button onClick={() => setMode((m) => (m === "dry" ? "live" : "dry"))} className="ml-auto flex items-center gap-2.5 font-mono text-[11px] text-muted-foreground" aria-pressed={mode === "live"}>
-          <span className="text-foreground/70">{mode === "live" ? "Live writes" : "Dry-run"}</span>
-          <span className="relative w-11 h-[23px] rounded-full transition-colors" style={{ background: mode === "live" ? HONEY : "#D8D0C2" }}>
-            <span className="absolute top-0.5 size-[19px] rounded-full bg-white shadow transition-all" style={{ left: mode === "live" ? 21 : 2 }} />
-          </span>
-        </button>
       </div>
 
       <div className="grid md:grid-cols-[1.45fr_.55fr] gap-5 flex-1 min-h-0">
@@ -230,7 +224,7 @@ function Chat({ conn, sub }: { conn: Conn; sub: string }) {
                 <div className={m.role === "user" ? "px-3.5 py-2.5 rounded-2xl rounded-br-sm bg-primary text-primary-foreground text-sm whitespace-pre-wrap" : m.role === "sys" ? "px-3.5 py-2.5 rounded-2xl text-sm border whitespace-pre-wrap" : "px-3.5 py-2.5 rounded-2xl rounded-bl-sm bg-muted border border-border text-sm"} style={m.role === "sys" ? { background: "#FBF3E4", borderColor: HONEY, color: HONEY } : undefined}>{m.role === "anne" ? <div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown></div> : m.text}</div>
               </motion.div>
             ))}
-            {busy && <div className="max-w-[88%]"><div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Anne</div><div className="px-3.5 py-2.5 rounded-2xl rounded-bl-sm bg-muted border border-border text-sm">…</div></div>}
+            {busy && <div className="max-w-[88%]"><div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Anne</div><div className="px-3.5 py-3 rounded-2xl rounded-bl-sm bg-muted border border-border w-fit"><span className="typing text-muted-foreground"><span /><span /><span /></span></div></div>}
             {embed && <a href={embed} target="_blank" rel="noopener" className="inline-flex items-center gap-2 font-mono text-xs px-3.5 py-2.5 rounded-xl no-underline w-fit" style={{ background: "#0E2B2A", color: "#F6ECD9", border: `1px solid ${HONEY}` }}>▶ Open live session with Anne</a>}
           </div>
           <div className="flex gap-2.5 mt-3.5">

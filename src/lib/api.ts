@@ -40,8 +40,8 @@ export async function agent(connection: Conn, messages: Msg[], mode: string): Pr
   } catch {
     throw new Error(
       r.status === 504 || /timeout|FUNCTION_INVOCATION/i.test(raw)
-        ? "The model is warming up — first request after idle can take ~90s. Give it a few seconds and resend."
-        : "Server error — please resend.",
+        ? "The model is warming up. First request after idle can take ~90s. Give it a few seconds and resend."
+        : "Server error. Please resend.",
     );
   }
   if (!d.ok) throw new Error(d.error || "Agent error.");

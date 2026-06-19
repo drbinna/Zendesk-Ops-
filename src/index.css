@@ -151,3 +151,10 @@
 .md h1, .md h2, .md h3 { font-weight: 600; font-size: 1em; margin: 0.35rem 0 0.25rem; }
 .md code { font-size: 0.85em; background: rgba(0,0,0,0.06); padding: 0.1em 0.35em; border-radius: 5px; }
 .md a { text-decoration: underline; }
+
+/* modern chat typing indicator */
+@keyframes typing-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .35; } 30% { transform: translateY(-3px); opacity: 1; } }
+.typing { display: inline-flex; gap: 4px; align-items: center; }
+.typing span { width: 6px; height: 6px; border-radius: 9999px; background: currentColor; opacity: .35; animation: typing-bounce 1.2s infinite ease-in-out; }
+.typing span:nth-child(2) { animation-delay: .15s; }
+.typing span:nth-child(3) { animation-delay: .3s; }
