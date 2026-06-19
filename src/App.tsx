@@ -34,7 +34,7 @@ export default function App() {
 
       <main className="relative w-full max-w-4xl rounded-[2rem] border border-white/10 bg-card/85 backdrop-blur-xl shadow-2xl shadow-black/40 overflow-hidden">
         <div className="flex items-center gap-3 px-5 py-2.5 text-[#EAF3F1]" style={{ background: "linear-gradient(180deg,#0E3A38,#0A4B49)" }}>
-          <span className="inline-flex items-center rounded-lg px-2.5 py-1" style={{ background: "#F7F3E7" }}><img src="/anne-wordmark.png" alt="Anne" className="h-6 w-auto block" /></span>
+          <img src="/anne-wordmark.png" alt="Anne" className="h-7 w-auto block" />
           <span className="font-heading text-sm text-white/85">A Zendesk operator</span>
           {screen !== "connect" && (
             <button onClick={() => { setConn(null); setData(null); setScreen("connect"); }} className="ml-auto inline-flex items-center gap-1.5 font-mono text-[11px] text-white/70 hover:text-white transition" title="Exit to the start">
