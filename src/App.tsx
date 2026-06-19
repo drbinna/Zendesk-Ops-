@@ -10,6 +10,15 @@ import { scan, agent, warm, type Conn, type ScanResult, type Msg, type TraceEntr
 const PETROL = "#0E6E6B";
 const HONEY = "#B26F1E";
 
+const stripToolNoise = (t: string) =>
+  (t || "")
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, " ")
+    .replace(/<tool_call>[\s\S]*$/g, " ")
+    .replace(/<\/?tool_call>/g, " ")
+    .replace(/<\|[^|]*\|>/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+
 type Screen = "connect" | "scan" | "chat";
 type ChatMsg = { role: "user" | "anne" | "sys"; text: string };
 
@@ -213,7 +222,7 @@ function Chat({ conn, sub }: { conn: Conn; sub: string }) {
             {thread.map((m, i) => (
               <motion.div key={i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className={m.role === "user" ? "self-end max-w-[88%] text-right" : "max-w-[88%]"}>
                 <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{m.role === "user" ? "You" : m.role === "sys" ? "Anne · verify" : "Anne"}</div>
-                <div className={m.role === "user" ? "px-3.5 py-2.5 rounded-2xl rounded-br-sm bg-primary text-primary-foreground text-sm whitespace-pre-wrap" : m.role === "sys" ? "px-3.5 py-2.5 rounded-2xl text-sm border whitespace-pre-wrap" : "px-3.5 py-2.5 rounded-2xl rounded-bl-sm bg-muted border border-border text-sm"} style={m.role === "sys" ? { background: "#FBF3E4", borderColor: HONEY, color: HONEY } : undefined}>{m.role === "anne" ? <div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown></div> : m.text}</div>
+                <div className={m.role === "user" ? "px-3.5 py-2.5 rounded-2xl rounded-br-sm bg-primary text-primary-foreground text-sm whitespace-pre-wrap" : m.role === "sys" ? "px-3.5 py-2.5 rounded-2xl text-sm border whitespace-pre-wrap" : "px-3.5 py-2.5 rounded-2xl rounded-bl-sm bg-muted border border-border text-sm"} style={m.role === "sys" ? { background: "#FBF3E4", borderColor: HONEY, color: HONEY } : undefined}>{m.role === "anne" ? <div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{stripToolNoise(m.text)}</ReactMarkdown></div> : m.text}</div>
               </motion.div>
             ))}
             {busy && <div className="max-w-[88%]"><div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Anne</div><div className="px-3.5 py-3 rounded-2xl rounded-bl-sm bg-muted border border-border w-fit"><span className="typing text-muted-foreground"><span /><span /><span /></span></div></div>}

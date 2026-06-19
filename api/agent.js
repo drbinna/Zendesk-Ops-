@@ -128,13 +128,50 @@ async function callOpenAI(system, messages) {
   const r = await fetch(`${OAI_BASE}/chat/completions`, { method: "POST", headers: { authorization: `Bearer ${OAI_KEY}`, "content-type": "application/json" }, body: JSON.stringify({ model: MODEL, messages: [{ role: "system", content: system }, ...messages], tools: OAI_TOOLS, tool_choice: "auto", max_tokens: 1024, temperature: 0.2 }) });
   const body = await r.json(); if (!r.ok) throw new Error(body?.error?.message || `LLM ${r.status}`); return body.choices?.[0]?.message;
 }
+// Some self-hosted models emit tool calls as <tool_call>{...}</tool_call> text in the
+// message content instead of using the structured tool_calls channel. Parse those out so
+// they actually execute, and so the raw syntax never reaches the user.
+function firstJsonObject(s) {
+  const start = s.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  for (let i = start; i < s.length; i++) {
+    if (s[i] === "{") depth++;
+    else if (s[i] === "}") { depth--; if (depth === 0) { try { return JSON.parse(s.slice(start, i + 1)); } catch { return null; } } }
+  }
+  return null;
+}
+function parseTextToolCalls(content) {
+  const calls = [];
+  if (!content || content.indexOf("<tool_call>") === -1) return calls;
+  for (let chunk of content.split("<tool_call>").slice(1)) {
+    chunk = chunk.split("</tool_call>")[0];
+    const obj = firstJsonObject(chunk);
+    if (obj && obj.name) calls.push({ id: "call_" + Math.random().toString(36).slice(2, 10), type: "function", function: { name: obj.name, arguments: JSON.stringify(obj.arguments || obj.parameters || {}) } });
+  }
+  return calls;
+}
+function cleanReply(content) {
+  if (!content) return "";
+  let t = String(content)
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, " ") // closed blocks
+    .replace(/<tool_call>[\s\S]*$/g, " ")               // unclosed trailing block
+    .replace(/<\/?tool_call>/g, " ")                    // stray tags
+    .replace(/<\|[^|]*\|>/g, " ");                       // stray special tokens
+  return t.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
 export async function runOpenAI(system, messages, conn, mode) {
   let convo = [...messages]; const trace = [];
   for (let i = 0; i < 6; i++) {
     const msg = await callOpenAI(system, convo); if (!msg) throw new Error("Empty response from model.");
-    convo.push(msg);
-    const calls = msg.tool_calls || [];
-    if (!calls.length) return { reply: (msg.content || "").trim() || "(no reply)", trace, messages: convo };
+    let calls = msg.tool_calls || [];
+    if (!calls.length) { const textCalls = parseTextToolCalls(msg.content); if (textCalls.length) calls = textCalls; }
+    if (!calls.length) {
+      convo.push({ role: "assistant", content: cleanReply(msg.content) });
+      return { reply: cleanReply(msg.content) || "(no reply)", trace, messages: convo };
+    }
+    // record a clean assistant turn that carries the calls, so history stays coherent
+    convo.push({ role: "assistant", content: cleanReply(msg.content) || null, tool_calls: calls });
     for (const c of calls) {
       let input = {}; try { input = JSON.parse(c.function.arguments || "{}"); } catch {}
       let out; try { out = await runTool(c.function.name, input, conn, mode); } catch (e) { out = { error: e.message }; }
@@ -142,7 +179,7 @@ export async function runOpenAI(system, messages, conn, mode) {
       convo.push({ role: "tool", tool_call_id: c.id, content: JSON.stringify(out).slice(0, 6000) });
     }
   }
-  return { reply: "(Paused after several steps — say 'continue'.)", trace, messages: convo };
+  return { reply: "(Paused after several steps. Say 'continue'.)", trace, messages: convo };
 }
 
 export default async function handler(req, res) {
