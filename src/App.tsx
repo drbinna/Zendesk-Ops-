@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowRight, RotateCcw, Clock3, ShieldCheck, RefreshCw } from "lucide-react";
+import { ArrowRight, RotateCcw, ShieldCheck, Zap, Plug, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import BlurredOrb from "@/components/blurred-orb";
 import ReactMarkdown from "react-markdown";
@@ -105,17 +105,19 @@ function Connect({ onConnected }: { onConnected: (c: Conn, d: ScanResult) => voi
         </form>
 
         <div className="rounded-2xl border border-border bg-muted/50 p-5 self-start">
-          <h4 className="font-heading text-sm mb-4">What this does</h4>
+          <h4 className="font-heading text-sm mb-4">What is an operator</h4>
           {([
-            [<Clock3 className="size-4" />, "Reads your tickets, groups, views, and fields", "So Anne understands your setup.", false],
-            [<RefreshCw className="size-4" />, "Acts only when you ask, gated by verification", "Destructive writes pause for confirm.", true],
-            [<ShieldCheck className="size-4" />, "No storage", "Credentials live in your browser for this session only.", false],
+            [<Zap className="size-4" />, "An operator is not just a chatbot", "It takes the actions a human agent would: opening, updating, routing, and closing tickets.", false],
+            [<Plug className="size-4" />, "An operator plugs into your Zendesk", "It reads your tickets, groups, views, and fields, and works against your real workspace.", false],
+            [<MessageSquare className="size-4" />, "An operator executes in plain language", "Ask in plain words and it triages, searches, updates, and hands off in seconds.", false],
+            [<ShieldCheck className="size-4" />, "An operator stays inside the rails", "Every destructive move passes a verification gate that pauses for your confirmation.", true],
           ] as [React.ReactNode, string, string, boolean][]).map(([icon, head, tail, warm2], i) => (
             <div key={i} className="flex gap-3 mb-3.5 last:mb-0">
               <span className="shrink-0 size-7 grid place-items-center rounded-lg" style={warm2 ? { background: "#F6ECD9", color: HONEY } : { background: "#E8F0EF", color: PETROL }}>{icon}</span>
               <p className="text-[13px] leading-snug">{head}. <span className="text-muted-foreground">{tail}</span></p>
             </div>
           ))}
+          <a href="https://drbinna.github.io/Field-notes-/" target="_blank" rel="noopener" className="flex items-center gap-1.5 mt-4 pt-3.5 border-t border-border font-mono text-[12px] no-underline" style={{ color: PETROL }}>Read more <ArrowRight className="size-3.5" /></a>
         </div>
       </div>
     </motion.div>
