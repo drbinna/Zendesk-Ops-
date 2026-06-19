@@ -99,7 +99,7 @@ function Connect({ onConnected }: { onConnected: (c: Conn, d: ScanResult) => voi
           </Field>
           <Field label="Agent email"><input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="you@company.com" autoComplete="off" className={inputCls} /></Field>
           <Field label="API token"><input value={token} onChange={(e) => setToken(e.target.value)} type="password" placeholder="••••••••••••••••" autoComplete="off" className={inputCls} /></Field>
-          <Button type="submit" disabled={busy} size="lg" className="h-11 px-5 text-[15px] rounded-xl">{busy ? "Connecting…" : "Connect & scan"} <ArrowRight /></Button>
+          <Button type="submit" disabled={busy} size="lg" className="h-11 px-5 text-[15px] rounded-xl">{busy ? "Connecting…" : "Connect Operator"} <ArrowRight /></Button>
           {err && <p className="mt-3.5 text-sm font-medium text-destructive">{err}</p>}
           <p className="mt-3.5 text-xs leading-relaxed text-muted-foreground">Generate a token in Admin Center → Apps and integrations → APIs → Zendesk API. Used live for this session only, never saved.</p>
         </form>
