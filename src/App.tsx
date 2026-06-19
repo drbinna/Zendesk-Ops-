@@ -207,10 +207,6 @@ function Chat({ conn, sub }: { conn: Conn; sub: string }) {
 
   return (
     <motion.div {...rise} className="flex flex-col h-[560px] -m-1">
-      <div className="flex items-center mb-4">
-        <p className="font-mono text-[11px] uppercase tracking-[0.18em]" style={{ color: PETROL }}>Operate · {sub}.zendesk.com</p>
-      </div>
-
       <div className="grid md:grid-cols-[1.45fr_.55fr] gap-5 flex-1 min-h-0">
         <div className="flex flex-col min-h-0">
           <div className="flex-1 overflow-y-auto flex flex-col gap-3 pr-1.5">
