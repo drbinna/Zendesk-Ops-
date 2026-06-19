@@ -27,6 +27,10 @@ GPU = "A10G"
 N_GPU = 1
 MAX_MODEL_LEN = 16384
 PORT = 8000
+# Keep-warm: 1 = one GPU always running (no cold start, instant responses, but you
+# pay for the idle GPU ~24/7). 0 = scale to zero (cheap, but ~90s cold start when idle).
+# Flip to 1 for demos / active use; back to 0 when you're done to stop idle cost.
+MIN_CONTAINERS = 1
 # ------------------------------------------------------------------------
 
 vllm_image = (
@@ -46,8 +50,8 @@ app = modal.App("goblin-operator-llm")
 @app.function(
     image=vllm_image,
     gpu=f"{GPU}:{N_GPU}",
-    # Stay warm 5 min after the last request, then scale to zero (no idle cost).
-    # For a demo with zero cold-start, add: min_containers=1  (pays for idle GPU).
+    # Keep one GPU hot so there's no cold start (see MIN_CONTAINERS above).
+    min_containers=MIN_CONTAINERS,
     scaledown_window=300,
     timeout=20 * 60,
     volumes={"/root/.cache/huggingface": hf_cache, "/root/.cache/vllm": vllm_cache},
