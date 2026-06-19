@@ -46,11 +46,21 @@ function zdClient(conn) {
   return { call };
 }
 const slim = (t) => ({ id: t.id, subject: t.subject, status: t.status, priority: t.priority ?? null, updated_at: t.updated_at });
+// Help Center article bodies are HTML; strip to plain text so the model gets clean,
+// bounded content it can paraphrase or quote back to a customer.
+const stripHtml = (h) => String(h || "")
+  .replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<script[\s\S]*?<\/script>/gi, " ")
+  .replace(/<[^>]+>/g, " ")
+  .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+  .replace(/\s+/g, " ").trim();
+const articleSlim = (a, n = 320) => ({ id: a.id, title: a.title, url: a.html_url, snippet: stripHtml(a.body).slice(0, n) });
 
 export const TOOLS = [
   { name: "zendesk_search", description: "Search tickets with Zendesk query syntax, e.g. 'type:ticket status:solved'. Read-only.", input_schema: { type: "object", properties: { query: { type: "string" }, per_page: { type: "number" } }, required: ["query"] } },
   { name: "zendesk_list_tickets", description: "List recent tickets, optional status filter (new/open/pending/solved/closed). Read-only.", input_schema: { type: "object", properties: { status: { type: "string" }, limit: { type: "number" } } } },
   { name: "zendesk_get_ticket", description: "Fetch one ticket by id. Read-only.", input_schema: { type: "object", properties: { id: { type: "number" } }, required: ["id"] } },
+  { name: "zendesk_search_articles", description: "Search the Help Center knowledge base (Zendesk Guide) for articles by keyword, e.g. 'refund policy' or 'reset password'. Use this to answer how-to, policy, and 'where do I…' questions from the account's own documentation. Read-only.", input_schema: { type: "object", properties: { query: { type: "string" }, per_page: { type: "number" } }, required: ["query"] } },
+  { name: "zendesk_get_article", description: "Fetch the full text of one Help Center article by id (from a prior zendesk_search_articles result). Read-only.", input_schema: { type: "object", properties: { id: { type: "number" } }, required: ["id"] } },
   { name: "zendesk_add_note", description: "Add a private internal note to a ticket. Write.", input_schema: { type: "object", properties: { ticket_id: { type: "number" }, note: { type: "string" } }, required: ["ticket_id", "note"] } },
   { name: "zendesk_update_ticket", description: "Update a ticket: status (open/pending/solved), priority, or add a public reply. Accepts a single id or comma-separated ids for bulk. Write.", input_schema: { type: "object", properties: { ticket_ids: { type: "string" }, status: { type: "string" }, priority: { type: "string" }, reply: { type: "string" } }, required: ["ticket_ids"] } },
   { name: "zendesk_create_ticket", description: "Open a new ticket. Write.", input_schema: { type: "object", properties: { subject: { type: "string" }, description: { type: "string" }, priority: { type: "string" } }, required: ["subject", "description"] } },
@@ -67,6 +77,18 @@ export async function runTool(name, input, conn, mode) {
   if (name === "zendesk_search") { const out = await zd.call(`/search.json?query=${encodeURIComponent(input.query)}&per_page=${Math.min(input.per_page || 10, 100)}`); return { count: out.count, results: (out.results || []).slice(0, 12).map(slim) }; }
   if (name === "zendesk_list_tickets") { const out = await zd.call("/tickets.json?page[size]=100&sort_order=desc"); let t = (out.tickets || []).map(slim); if (input.status) t = t.filter((x) => x.status === String(input.status).toLowerCase()); return { count: t.length, tickets: t.slice(0, input.limit || 10) }; }
   if (name === "zendesk_get_ticket") { const out = await zd.call(`/tickets/${parseInt(input.id, 10)}.json`); return { ticket: slim(out.ticket) }; }
+  if (name === "zendesk_search_articles") {
+    const per = Math.min(input.per_page || 5, 20);
+    try {
+      const out = await zd.call(`/help_center/articles/search.json?query=${encodeURIComponent(input.query)}&per_page=${per}`);
+      return { count: out.count ?? (out.results || []).length, results: (out.results || []).slice(0, per).map((a) => articleSlim(a)) };
+    } catch (e) {
+      // No Guide provisioned, or the token's owner lacks Help Center access.
+      if (/\b40[34]\b/.test(e.message)) return { count: 0, results: [], note: "No Help Center is enabled for this account, or this agent can't read Guide." };
+      throw e;
+    }
+  }
+  if (name === "zendesk_get_article") { const out = await zd.call(`/help_center/articles/${parseInt(input.id, 10)}.json`); const a = out.article || {}; return { article: { id: a.id, title: a.title, url: a.html_url, body: stripHtml(a.body).slice(0, 2000) }, message: `Article: ${a.title || input.id}` }; }
   if (name === "zendesk_add_note") { const out = await zd.call(`/tickets/${parseInt(input.ticket_id, 10)}.json`, { method: "PUT", body: JSON.stringify({ ticket: { comment: { body: `[Operator] ${input.note}`, public: false } } }) }); return { ok: true, ticket: slim(out.ticket), message: `Internal note added to #${input.ticket_id}` }; }
   if (name === "zendesk_update_ticket") {
     const ids = String(input.ticket_ids).split(",").map((x) => parseInt(x.trim(), 10)).filter(Boolean);
@@ -99,6 +121,7 @@ function summarize(out) {
 
 const SYSTEM = (sub, mode) => `You are Anne, the AI operator for the Zendesk account "${sub}". You help the user run it by chatting.
 Use your tools to read and act — never invent ticket numbers, counts, or statuses; only report what tools return.
+You can also read this account's Help Center knowledge base: for how-to, policy, or "where do I…" questions, call zendesk_search_articles, then zendesk_get_article for the full text, and answer from the article — reference its title and link. If the search returns nothing, say the knowledge base has no matching article rather than guessing.
 Before any destructive or bulk write (closing/solving multiple tickets, refunds, mass updates), FIRST call goblin_verify_resolution, summarize the result, and ask the user to confirm before you execute the write.
 ${mode === "live" ? "You are in LIVE mode: writes really happen, so confirm first." : "You are in DRY-RUN mode: write tools return simulated results without changing anything. Make clear what WOULD happen."}
 Keep replies short and conversational. When you hand off to an embodied session, share the link.`;
