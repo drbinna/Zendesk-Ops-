@@ -55,7 +55,7 @@
     --card-foreground: oklch(0.145 0 0);
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
+    --primary: #0E6E6B;
     --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.97 0 0);
     --secondary-foreground: oklch(0.205 0 0);
@@ -128,3 +128,26 @@
     @apply font-sans;
     }
 }
+/* markdown inside Anne's chat bubbles */
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 0.5rem; }
+.md strong { font-weight: 600; }
+.md ul { list-style: disc; padding-left: 1.15rem; margin: 0.25rem 0 0.5rem; }
+.md ol { list-style: decimal; padding-left: 1.15rem; margin: 0.25rem 0 0.5rem; }
+.md li { margin: 0.1rem 0; }
+.md h1, .md h2, .md h3 { font-weight: 600; margin: 0.35rem 0 0.2rem; }
+.md code { font-family: ui-monospace, monospace; font-size: 0.85em; background: rgba(0,0,0,0.06); padding: 0.08em 0.32em; border-radius: 4px; }
+.md a { color: #0E6E6B; text-decoration: underline; }
+
+/* markdown inside Anne's chat bubbles */
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 0.5rem; }
+.md strong { font-weight: 600; }
+.md ul { list-style: disc; padding-left: 1.15rem; margin: 0.25rem 0 0.5rem; }
+.md ol { list-style: decimal; padding-left: 1.15rem; margin: 0.25rem 0 0.5rem; }
+.md li { margin: 0.1rem 0; }
+.md h1, .md h2, .md h3 { font-weight: 600; font-size: 1em; margin: 0.35rem 0 0.25rem; }
+.md code { font-size: 0.85em; background: rgba(0,0,0,0.06); padding: 0.1em 0.35em; border-radius: 5px; }
+.md a { text-decoration: underline; }
