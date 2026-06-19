@@ -60,6 +60,16 @@ export default function App() {
 }
 
 const rise = { initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 }, transition: { duration: 0.4 } };
+const Vine = ({ className = "" }: { className?: string }) => (
+  <svg viewBox="0 0 70 48" className={className} fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M4 42 C 16 18, 40 12, 66 22" fill="none" stroke="#C8902F" strokeWidth="2.4" strokeLinecap="round" />
+    <path d="M0 0 C 5 -7 14 -7 18 0 C 14 6 5 6 0 0 Z" transform="translate(16,22) rotate(-38)" fill="#D98A2B" />
+    <path d="M0 0 C 5 -7 14 -7 18 0 C 14 6 5 6 0 0 Z" transform="translate(34,15) rotate(-22)" fill="#E8A85C" />
+    <path d="M0 0 C 4 -6 12 -6 15 0 C 12 5 4 5 0 0 Z" transform="translate(11,33) rotate(28)" fill="#6FA05B" />
+    <path d="M0 0 C 4 -6 12 -6 15 0 C 12 5 4 5 0 0 Z" transform="translate(50,17) rotate(-12)" fill="#7FA862" />
+    <circle cx="65" cy="22" r="2.6" fill="#D98A2B" />
+  </svg>
+);
 const Eyebrow = ({ children }: { children: React.ReactNode }) => (
   <p className="font-mono text-[11px] uppercase tracking-[0.18em] mb-4" style={{ color: PETROL }}>{children}</p>
 );
@@ -101,7 +111,7 @@ function Connect({ onConnected }: { onConnected: (c: Conn, d: ScanResult) => voi
 
   return (
     <motion.div {...rise}>
-      <h1 className="font-heading text-3xl md:text-4xl font-bold tracking-tight leading-[1.05] mb-3">Point Anne at your <span style={{ color: HONEY }}>Zendesk.</span></h1>
+      <h1 className="font-heading text-3xl md:text-4xl font-bold tracking-tight leading-[1.05] mb-3">Point <span className="relative inline-block">Anne<Vine className="absolute -top-3.5 -left-3 w-8 h-auto pointer-events-none" /><Vine className="absolute -bottom-3 -right-2 w-8 h-auto rotate-180 pointer-events-none" /></span> at your <span className="relative inline-block" style={{ color: HONEY }}>Zendesk.<Vine className="absolute -top-3.5 -left-2 w-8 h-auto pointer-events-none" /><Vine className="absolute -bottom-3 -right-1 w-8 h-auto rotate-180 pointer-events-none" /></span></h1>
       <p className="text-[15px] leading-relaxed text-muted-foreground max-w-prose mb-7">Enter your subdomain and an API token. We connect live and read your workspace. Nothing is stored.</p>
 
       <div className="grid md:grid-cols-[1.05fr_.95fr] gap-7">
