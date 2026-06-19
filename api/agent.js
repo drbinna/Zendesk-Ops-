@@ -27,7 +27,20 @@ function zdClient(conn) {
   const call = async (path, init) => {
     const r = await fetch(base + path, { ...init, headers: { authorization: auth, "content-type": "application/json", ...(init?.headers || {}) } });
     const body = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(`Zendesk ${r.status}: ${(body.error || body.description || "").toString().slice(0, 120)}`);
+    if (!r.ok) {
+      let detail = (body.error || body.description || "").toString();
+      // Zendesk 422 RecordInvalid puts the real reason in body.details: { field: [{ description }] }
+      if (body.details && typeof body.details === "object") {
+        const parts = [];
+        for (const k of Object.keys(body.details)) {
+          const arr = body.details[k];
+          if (Array.isArray(arr)) for (const d of arr) parts.push(`${k}: ${d.description || d.error || JSON.stringify(d)}`);
+          else if (arr) parts.push(`${k}: ${typeof arr === "string" ? arr : JSON.stringify(arr)}`);
+        }
+        if (parts.length) detail = parts.join("; ");
+      }
+      throw new Error(`Zendesk ${r.status}: ${detail.toString().slice(0, 240)}`);
+    }
     return body;
   };
   return { call };
