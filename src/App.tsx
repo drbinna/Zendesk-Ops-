@@ -19,11 +19,11 @@ export default function App() {
   const [data, setData] = useState<ScanResult | null>(null);
 
   return (
-    <div className="relative min-h-screen w-full overflow-hidden bg-background flex items-center justify-center p-4 md:p-8 font-sans text-foreground">
-      <BlurredOrb className="!w-[34rem] !h-[34rem] absolute -top-40 -right-32 opacity-40 blur-[120px]" style={{ background: `radial-gradient(circle at 30% 30%, ${PETROL}, transparent 70%)` }} />
-      <BlurredOrb className="!w-[30rem] !h-[30rem] absolute -bottom-40 -left-32 opacity-30 blur-[120px]" style={{ background: `radial-gradient(circle at 60% 40%, ${HONEY}, transparent 70%)` }} />
+    <div className="relative min-h-screen w-full overflow-hidden flex items-center justify-center p-4 md:p-8 font-sans text-foreground" style={{ background: "radial-gradient(120% 120% at 50% 0%, #0F3431 0%, #0A2422 38%, #061514 100%)" }}>
+      <BlurredOrb className="!w-[42rem] !h-[42rem] absolute -top-52 -right-40 opacity-70 blur-[100px]" style={{ background: `radial-gradient(circle at 30% 30%, #2BA39E, ${PETROL} 45%, transparent 72%)` }} />
+      <BlurredOrb className="!w-[38rem] !h-[38rem] absolute -bottom-52 -left-40 opacity-60 blur-[100px]" style={{ background: `radial-gradient(circle at 60% 40%, #F0A94E, ${HONEY} 45%, transparent 72%)` }} />
 
-      <main className="relative w-full max-w-4xl rounded-[2rem] border border-border bg-card/80 backdrop-blur-xl shadow-2xl shadow-black/10 overflow-hidden">
+      <main className="relative w-full max-w-4xl rounded-[2rem] border border-white/10 bg-card/85 backdrop-blur-xl shadow-2xl shadow-black/40 overflow-hidden">
         <div className="flex items-center px-5 py-3.5 text-[#EAF3F1]" style={{ background: "linear-gradient(180deg,#0E3A38,#0A4B49)" }}>
           <span className="font-heading font-semibold text-sm"><span style={{ color: "#E8A85C" }}>Anne</span> - A Zendesk operator</span>
         </div>
