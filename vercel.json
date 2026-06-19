@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": null,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "functions": {
     "api/scan.js": { "maxDuration": 15 },
     "api/agent.js": { "maxDuration": 60 },
