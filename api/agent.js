@@ -1,0 +1,168 @@
+// POST /api/agent  { connection:{subdomain,email,token}, messages:[...], mode:"dry"|"live" }
+// Runs a Claude tool-use loop that operates the connected Zendesk. Reads + the
+// verification check always run live; writes are simulated in "dry" mode.
+// Needs ANTHROPIC_API_KEY in the environment. Zendesk creds arrive per request.
+
+const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+const MODEL = process.env.OPERATOR_MODEL || "claude-sonnet-4-6";
+const PERSONAS = {
+  anne: "6b4df3c2-c9ce-49e7-a95b-8816e8216586",
+  gabriel: "e6db066d-80f1-49c6-96e9-a9c10af18397",
+  mia: "77b7e33a-c096-4bb4-b70f-bdc988cf8925",
+};
+const SITE = process.env.GOBLIN_SITE_URL || "https://www.usegoblin.xyz";
+
+function zdClient(conn) {
+  const base = `https://${conn.subdomain}.zendesk.com/api/v2`;
+  const auth = "Basic " + Buffer.from(`${conn.email}/token:${conn.token}`).toString("base64");
+  const call = async (path, init) => {
+    const r = await fetch(base + path, {
+      ...init,
+      headers: { authorization: auth, "content-type": "application/json", ...(init?.headers || {}) },
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(`Zendesk ${r.status}: ${(body.error || body.description || "").toString().slice(0, 120)}`);
+    return body;
+  };
+  return { call };
+}
+const slim = (t) => ({ id: t.id, subject: t.subject, status: t.status, priority: t.priority ?? null, updated_at: t.updated_at });
+
+// ---- tool definitions (Anthropic format) ----
+export const TOOLS = [
+  { name: "zendesk_search", description: "Search tickets with Zendesk query syntax, e.g. 'type:ticket status:solved'. Read-only.",
+    input_schema: { type: "object", properties: { query: { type: "string" }, per_page: { type: "number" } }, required: ["query"] } },
+  { name: "zendesk_list_tickets", description: "List recent tickets, optional status filter (new/open/pending/solved/closed). Read-only.",
+    input_schema: { type: "object", properties: { status: { type: "string" }, limit: { type: "number" } } } },
+  { name: "zendesk_get_ticket", description: "Fetch one ticket by id. Read-only.",
+    input_schema: { type: "object", properties: { id: { type: "number" } }, required: ["id"] } },
+  { name: "zendesk_add_note", description: "Add a private internal note to a ticket. Write.",
+    input_schema: { type: "object", properties: { ticket_id: { type: "number" }, note: { type: "string" } }, required: ["ticket_id", "note"] } },
+  { name: "zendesk_update_ticket", description: "Update a ticket: status (open/pending/solved), priority, or add a public reply. Accepts a single id or comma-separated ids for bulk. Write.",
+    input_schema: { type: "object", properties: { ticket_ids: { type: "string" }, status: { type: "string" }, priority: { type: "string" }, reply: { type: "string" } }, required: ["ticket_ids"] } },
+  { name: "zendesk_create_ticket", description: "Open a new ticket. Write.",
+    input_schema: { type: "object", properties: { subject: { type: "string" }, description: { type: "string" }, priority: { type: "string" } }, required: ["subject", "description"] } },
+  { name: "goblin_verify_resolution", description: "Check a proposed resolution against guardrails (over-refund, out-of-window, duplicate) BEFORE it runs. Always call this before a bulk close, refund, or other destructive action.",
+    input_schema: { type: "object", properties: { action_type: { type: "string" }, count: { type: "number" }, amount: { type: "number" }, order_age_days: { type: "number" }, already_resolved: { type: "boolean" } }, required: ["action_type"] } },
+  { name: "goblin_start_embodied_session", description: "Hand off to a live face+voice persona session (anne/gabriel/mia) and return a link. Use when a customer needs a human-feeling touch.",
+    input_schema: { type: "object", properties: { persona: { type: "string" }, context: { type: "string" } } } },
+];
+
+const isWrite = (n) => ["zendesk_add_note", "zendesk_update_ticket", "zendesk_create_ticket"].includes(n);
+
+// ---- tool executor ----
+export async function runTool(name, input, conn, mode) {
+  const dry = mode !== "live";
+  if (isWrite(name) && dry) return { simulated: true, mode: "dry-run", would: { tool: name, input } };
+  const zd = conn ? zdClient(conn) : null;
+
+  if (name === "zendesk_search") {
+    const out = await zd.call(`/search.json?query=${encodeURIComponent(input.query)}&per_page=${Math.min(input.per_page || 10, 100)}`);
+    return { count: out.count, results: (out.results || []).slice(0, 12).map(slim) };
+  }
+  if (name === "zendesk_list_tickets") {
+    const out = await zd.call("/tickets.json?page[size]=100&sort_order=desc");
+    let t = (out.tickets || []).map(slim);
+    if (input.status) t = t.filter((x) => x.status === String(input.status).toLowerCase());
+    return { count: t.length, tickets: t.slice(0, input.limit || 10) };
+  }
+  if (name === "zendesk_get_ticket") {
+    const out = await zd.call(`/tickets/${parseInt(input.id, 10)}.json`);
+    return { ticket: slim(out.ticket) };
+  }
+  if (name === "zendesk_add_note") {
+    const out = await zd.call(`/tickets/${parseInt(input.ticket_id, 10)}.json`, {
+      method: "PUT", body: JSON.stringify({ ticket: { comment: { body: `[Operator] ${input.note}`, public: false } } }) });
+    return { ok: true, ticket: slim(out.ticket), message: `Internal note added to #${input.ticket_id}` };
+  }
+  if (name === "zendesk_update_ticket") {
+    const ids = String(input.ticket_ids).split(",").map((x) => parseInt(x.trim(), 10)).filter(Boolean);
+    const ticket = {};
+    if (input.status) { let s = input.status.toLowerCase(); if (s === "closed") s = "solved"; ticket.status = s; }
+    if (input.priority) ticket.priority = input.priority;
+    if (input.reply) ticket.comment = { body: input.reply, public: true };
+    if (ids.length === 1) {
+      const out = await zd.call(`/tickets/${ids[0]}.json`, { method: "PUT", body: JSON.stringify({ ticket }) });
+      return { ok: true, ticket: slim(out.ticket), message: `Updated #${ids[0]}` };
+    }
+    await zd.call(`/tickets/update_many.json?ids=${ids.join(",")}`, { method: "PUT", body: JSON.stringify({ ticket }) });
+    return { ok: true, count: ids.length, message: `Updated ${ids.length} tickets` };
+  }
+  if (name === "zendesk_create_ticket") {
+    const out = await zd.call("/tickets.json", { method: "POST", body: JSON.stringify({ ticket: {
+      subject: input.subject, comment: { body: input.description },
+      priority: ["low", "normal", "high", "urgent"].includes(input.priority) ? input.priority : "normal",
+      tags: ["created-via-operator"] } }) });
+    return { ok: true, ticket: slim(out.ticket), message: `Created #${out.ticket.id}` };
+  }
+  if (name === "goblin_verify_resolution") {
+    const policy = { max_refund_amount: 500, resolution_window_days: 30 };
+    const v = [];
+    const valueAction = ["refund", "credit", "replace"].includes((input.action_type || "").toLowerCase());
+    if (valueAction && typeof input.amount === "number" && input.amount > policy.max_refund_amount)
+      v.push({ code: "over_refund", detail: `Amount ${input.amount} exceeds max ${policy.max_refund_amount}.` });
+    if (typeof input.order_age_days === "number" && input.order_age_days > policy.resolution_window_days)
+      v.push({ code: "out_of_window", detail: `Age ${input.order_age_days}d exceeds ${policy.resolution_window_days}d window.` });
+    if (input.already_resolved === true)
+      v.push({ code: "duplicate_resolution", detail: "Item already resolved; would be a duplicate." });
+    return { approved: v.length === 0, violations: v, checked_against: policy, count: input.count ?? null };
+  }
+  if (name === "goblin_start_embodied_session") {
+    const persona = ["anne", "gabriel", "mia"].includes(input.persona) ? input.persona : "anne";
+    return { url: `${SITE}/p/${PERSONAS[persona]}`, persona, context_relayed: input.context ?? null };
+  }
+  return { error: `unknown tool ${name}` };
+}
+
+const SYSTEM = (sub, mode) => `You are Anne, the AI operator for the Zendesk account "${sub}". You work inside this helpdesk and help the user run it by chatting.
+Use your tools to read and act — never invent ticket numbers, counts, or statuses; only report what tools return.
+Before any destructive or bulk write (closing/solving multiple tickets, refunds, mass updates), FIRST call goblin_verify_resolution, summarize the result, and ask the user to confirm before you execute the write.
+${mode === "live" ? "You are in LIVE mode: writes really happen, so be careful and confirm first." : "You are in DRY-RUN mode: write tools return simulated results without changing anything. Make clear what WOULD happen."}
+Keep replies short and conversational. When you hand off to an embodied session, share the link.`;
+
+async function callClaude(system, messages) {
+  const r = await fetch(ANTHROPIC_URL, {
+    method: "POST",
+    headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({ model: MODEL, max_tokens: 1024, system, tools: TOOLS, messages }),
+  });
+  const body = await r.json();
+  if (!r.ok) throw new Error(body?.error?.message || `Anthropic ${r.status}`);
+  return body;
+}
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "POST only" });
+  if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ ok: false, error: "ANTHROPIC_API_KEY is not set in this deployment's environment." });
+  const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+  const { connection, messages, mode } = body;
+  if (!connection?.subdomain || !connection?.token) return res.status(400).json({ ok: false, error: "Not connected." });
+  if (!Array.isArray(messages) || messages.length === 0) return res.status(400).json({ ok: false, error: "No messages." });
+
+  const system = SYSTEM(connection.subdomain, mode === "live" ? "live" : "dry");
+  let convo = messages;
+  const trace = [];
+  try {
+    for (let i = 0; i < 6; i++) {
+      const resp = await callClaude(system, convo);
+      convo = [...convo, { role: "assistant", content: resp.content }];
+      const toolUses = (resp.content || []).filter((c) => c.type === "tool_use");
+      if (resp.stop_reason !== "tool_use" || toolUses.length === 0) {
+        const text = (resp.content || []).filter((c) => c.type === "text").map((c) => c.text).join("\n").trim();
+        return res.status(200).json({ ok: true, reply: text || "(no reply)", trace, messages: convo });
+      }
+      const results = [];
+      for (const tu of toolUses) {
+        let out;
+        try { out = await runTool(tu.name, tu.input, connection, mode); }
+        catch (e) { out = { error: e.message }; }
+        trace.push({ tool: tu.name, input: tu.input, ok: !out.error, summary: out.message || out.error || (out.simulated ? "simulated" : (out.url || (out.approved !== undefined ? (out.approved ? "approved" : "blocked: " + (out.violations || []).map((x) => x.code).join(",")) : (out.count != null ? out.count + " results" : "done")))) });
+        results.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(out).slice(0, 6000) });
+      }
+      convo = [...convo, { role: "user", content: results }];
+    }
+    return res.status(200).json({ ok: true, reply: "(Paused after several steps — say 'continue' if you want me to keep going.)", trace, messages: convo });
+  } catch (e) {
+    return res.status(502).json({ ok: false, error: e.message });
+  }
+}
