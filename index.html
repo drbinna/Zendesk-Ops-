@@ -175,6 +175,7 @@
       const d=await r.json();
       if(!d.ok) throw new Error(d.error||'Connection failed.');
       conn={subdomain,email,token};
+      fetch('/api/warm').catch(()=>{});
       renderScan(d);
     }catch(err){ fail(err.message); }
     finally{ $('go').disabled=false; $('go').innerHTML='Connect &amp; scan <span>→</span>'; }
@@ -194,7 +195,7 @@
     step(0);
   }
   $('again').addEventListener('click',()=>{ show('s-connect'); $('token').value=''; conn=null; convo=[]; $('thread').innerHTML=''; $('calls').innerHTML=''; });
-  $('toChat').addEventListener('click',()=>{ show('s-chat'); if(!$('thread').children.length){ addMsg('anne',`Connected to ${conn.subdomain}.zendesk.com. Ask me to triage, search, update, or hand off a ticket. I'm in dry-run — flip the switch for live writes.`);} $('msg').focus(); });
+  $('toChat').addEventListener('click',()=>{ show('s-chat'); fetch('/api/warm').catch(()=>{}); if(!$('thread').children.length){ addMsg('anne',`Connected to ${conn.subdomain}.zendesk.com. Ask me to triage, search, update, or hand off a ticket. I'm in dry-run — flip the switch for live writes.`);} $('msg').focus(); });
 
   // ---- mode toggle ----
   $('modeSw').addEventListener('click',toggleMode);
@@ -212,7 +213,8 @@
     const think=addMsg('anne','…');
     try{
       const r=await fetch('/api/agent',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({connection:conn,messages:convo,mode})});
-      const d=await r.json();
+      const raw=await r.text(); let d;
+      try{ d=JSON.parse(raw); }catch{ throw new Error((r.status===504||/timeout|FUNCTION_INVOCATION/i.test(raw))?'The model is warming up — first request after idle can take ~90s. Give it a few seconds and resend.':'Server error — please resend.'); }
       think.remove();
       if(!d.ok) throw new Error(d.error||'Agent error.');
       convo=d.messages;

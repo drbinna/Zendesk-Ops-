@@ -3,6 +3,7 @@
   "framework": null,
   "functions": {
     "api/scan.js": { "maxDuration": 15 },
-    "api/agent.js": { "maxDuration": 60 }
+    "api/agent.js": { "maxDuration": 60 },
+    "api/warm.js": { "maxDuration": 10 }
   }
 }
