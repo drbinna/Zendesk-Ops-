@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowRight, RotateCcw, ShieldCheck, Zap, Plug, MessageSquare } from "lucide-react";
+import { ArrowRight, RotateCcw, ShieldCheck, Zap, Plug, MessageSquare, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import BlurredOrb from "@/components/blurred-orb";
 import ReactMarkdown from "react-markdown";
@@ -36,6 +36,11 @@ export default function App() {
         <div className="flex items-center gap-3 px-5 py-2.5 text-[#EAF3F1]" style={{ background: "linear-gradient(180deg,#0E3A38,#0A4B49)" }}>
           <span className="inline-flex items-center rounded-lg px-2.5 py-1" style={{ background: "#F7F3E7" }}><img src="/anne-wordmark.png" alt="Anne" className="h-6 w-auto block" /></span>
           <span className="font-heading text-sm text-white/85">A Zendesk operator</span>
+          {screen !== "connect" && (
+            <button onClick={() => { setConn(null); setData(null); setScreen("connect"); }} className="ml-auto inline-flex items-center gap-1.5 font-mono text-[11px] text-white/70 hover:text-white transition" title="Exit to the start">
+              <LogOut className="size-3.5" /> Exit
+            </button>
+          )}
         </div>
 
         <div className="min-h-[560px] p-8 md:p-11">
