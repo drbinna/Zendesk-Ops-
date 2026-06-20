@@ -59,8 +59,9 @@ export const TOOLS = [
   { name: "zendesk_search", description: "Search tickets with Zendesk query syntax, e.g. 'type:ticket status:solved'. Read-only.", input_schema: { type: "object", properties: { query: { type: "string" }, per_page: { type: "number" } }, required: ["query"] } },
   { name: "zendesk_list_tickets", description: "List recent tickets, optional status filter (new/open/pending/solved/closed). Read-only.", input_schema: { type: "object", properties: { status: { type: "string" }, limit: { type: "number" } } } },
   { name: "zendesk_get_ticket", description: "Fetch one ticket by id. Read-only.", input_schema: { type: "object", properties: { id: { type: "number" } }, required: ["id"] } },
-  { name: "zendesk_search_articles", description: "Search the Help Center knowledge base (Zendesk Guide) for articles by keyword, e.g. 'refund policy' or 'reset password'. Use this to answer how-to, policy, and 'where do I…' questions from the account's own documentation. Read-only.", input_schema: { type: "object", properties: { query: { type: "string" }, per_page: { type: "number" } }, required: ["query"] } },
-  { name: "zendesk_get_article", description: "Fetch the full text of one Help Center article by id (from a prior zendesk_search_articles result). Read-only.", input_schema: { type: "object", properties: { id: { type: "number" } }, required: ["id"] } },
+  { name: "zendesk_search_articles", description: "Search the Help Center knowledge base (Zendesk Guide) for articles by KEYWORD, e.g. 'refund policy' or 'reset password'. Requires a non-empty search term. To browse what's in the knowledge base without a keyword, use zendesk_list_articles instead. Read-only.", input_schema: { type: "object", properties: { query: { type: "string" }, per_page: { type: "number" } }, required: ["query"] } },
+  { name: "zendesk_list_articles", description: "List/browse Help Center knowledge base articles, most recently updated first — no search keyword needed. Use this when the user wants to see what's IN the knowledge base, asks to browse, or isn't sure what to search for. Read-only.", input_schema: { type: "object", properties: { limit: { type: "number" } } } },
+  { name: "zendesk_get_article", description: "Fetch the full text of one Help Center article by id (from a prior zendesk_search_articles or zendesk_list_articles result). Read-only.", input_schema: { type: "object", properties: { id: { type: "number" } }, required: ["id"] } },
   { name: "zendesk_add_note", description: "Add a private internal note to a ticket. Write.", input_schema: { type: "object", properties: { ticket_id: { type: "number" }, note: { type: "string" } }, required: ["ticket_id", "note"] } },
   { name: "zendesk_update_ticket", description: "Update a ticket: status (open/pending/solved), priority, or add a public reply. Accepts a single id or comma-separated ids for bulk. Write.", input_schema: { type: "object", properties: { ticket_ids: { type: "string" }, status: { type: "string" }, priority: { type: "string" }, reply: { type: "string" } }, required: ["ticket_ids"] } },
   { name: "zendesk_create_ticket", description: "Open a new ticket. Write.", input_schema: { type: "object", properties: { subject: { type: "string" }, description: { type: "string" }, priority: { type: "string" } }, required: ["subject", "description"] } },
@@ -78,12 +79,25 @@ export async function runTool(name, input, conn, mode) {
   if (name === "zendesk_list_tickets") { const out = await zd.call("/tickets.json?page[size]=100&sort_order=desc"); let t = (out.tickets || []).map(slim); if (input.status) t = t.filter((x) => x.status === String(input.status).toLowerCase()); return { count: t.length, tickets: t.slice(0, input.limit || 10) }; }
   if (name === "zendesk_get_ticket") { const out = await zd.call(`/tickets/${parseInt(input.id, 10)}.json`); return { ticket: slim(out.ticket) }; }
   if (name === "zendesk_search_articles") {
+    const q = (input.query || "").trim();
+    // Zendesk's Search Articles endpoint 400s without a search param — never send an empty query.
+    if (!q) return { count: 0, results: [], note: "No keyword provided. Use zendesk_list_articles to browse, or pass a search term." };
     const per = Math.min(input.per_page || 5, 20);
     try {
-      const out = await zd.call(`/help_center/articles/search.json?query=${encodeURIComponent(input.query)}&per_page=${per}`);
+      const out = await zd.call(`/help_center/articles/search.json?query=${encodeURIComponent(q)}&per_page=${per}`);
       return { count: out.count ?? (out.results || []).length, results: (out.results || []).slice(0, per).map((a) => articleSlim(a)) };
     } catch (e) {
-      // No Guide provisioned, or the token's owner lacks Help Center access.
+      if (/\b40[34]\b/.test(e.message)) return { count: 0, results: [], note: "No Help Center is enabled for this account, or this agent can't read Guide." };
+      throw e;
+    }
+  }
+  if (name === "zendesk_list_articles") {
+    const per = Math.min(input.limit || 10, 30);
+    try {
+      const out = await zd.call(`/help_center/articles.json?sort_by=updated_at&sort_order=desc&per_page=${per}`);
+      const arts = (out.articles || []).slice(0, per).map((a) => articleSlim(a));
+      return { count: out.count ?? arts.length, results: arts, ...(arts.length ? {} : { note: "The Help Center has no published articles, or this agent can't see them." }) };
+    } catch (e) {
       if (/\b40[34]\b/.test(e.message)) return { count: 0, results: [], note: "No Help Center is enabled for this account, or this agent can't read Guide." };
       throw e;
     }
@@ -121,7 +135,7 @@ function summarize(out) {
 
 const SYSTEM = (sub, mode) => `You are Anne, the AI operator for the Zendesk account "${sub}". You help the user run it by chatting.
 Use your tools to read and act — never invent ticket numbers, counts, or statuses; only report what tools return.
-You can also read this account's Help Center knowledge base: for how-to, policy, or "where do I…" questions, call zendesk_search_articles, then zendesk_get_article for the full text, and answer from the article — reference its title and link. If the search returns nothing, say the knowledge base has no matching article rather than guessing.
+You can also read this account's Help Center knowledge base. To browse what's in it — when the user asks what's in the KB, says to look it up, or isn't sure what to search — call zendesk_list_articles (no keyword needed). For a specific how-to, policy, or "where do I…" question, call zendesk_search_articles with a KEYWORD, then zendesk_get_article for the full text, and answer from the article — reference its title and link. Never call zendesk_search_articles without a keyword. If nothing comes back, say the knowledge base has no matching article rather than guessing.
 Before any destructive or bulk write (closing/solving multiple tickets, refunds, mass updates), FIRST call goblin_verify_resolution, summarize the result, and ask the user to confirm before you execute the write.
 ${mode === "live" ? "You are in LIVE mode: writes really happen, so confirm first." : "You are in DRY-RUN mode: write tools return simulated results without changing anything. Make clear what WOULD happen."}
 Keep replies short and conversational. When you hand off to an embodied session, share the link.`;
