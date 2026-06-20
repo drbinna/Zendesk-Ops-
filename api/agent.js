@@ -149,7 +149,12 @@ async function runAnthropic(system, messages, conn, mode) {
 const OAI_TOOLS = TOOLS.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.input_schema } }));
 async function callOpenAI(system, messages) {
   const r = await fetch(`${OAI_BASE}/chat/completions`, { method: "POST", headers: { authorization: `Bearer ${OAI_KEY}`, "content-type": "application/json" }, body: JSON.stringify({ model: MODEL, messages: [{ role: "system", content: system }, ...messages], tools: OAI_TOOLS, tool_choice: "auto", max_tokens: 1024, temperature: 0.2 }) });
-  const body = await r.json(); if (!r.ok) throw new Error(body?.error?.message || `LLM ${r.status}`); return body.choices?.[0]?.message;
+  const text = await r.text();
+  let body;
+  try { body = JSON.parse(text); }
+  catch { throw new Error(`The model endpoint isn't returning JSON (HTTP ${r.status}) — the Modal GPU is cold-starting or the app is stopped. Wait a few seconds and resend; if it persists, redeploy with 'modal deploy'.`); }
+  if (!r.ok) throw new Error(body?.error?.message || `LLM ${r.status}`);
+  return body.choices?.[0]?.message;
 }
 // Some self-hosted models emit tool calls as <tool_call>{...}</tool_call> text in the
 // message content instead of using the structured tool_calls channel. Parse those out so
