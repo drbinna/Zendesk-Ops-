@@ -28,11 +28,10 @@ N_GPU = 1
 MAX_MODEL_LEN = 16384
 PORT = 8000
 # Keep-warm: 1 = one GPU always running (no cold start, but you pay for the idle
-# GPU ~24/7). 0 = scale to zero — no GPU runs until a request actually hits the
-# endpoint (the first chat message), which boots one on demand; it shuts down after
-# scaledown_window of idle, so you pay only while it's actually serving. Nothing
-# pre-warms it, so the first message after idle eats the full cold start (~60-90s).
-# Flip to 1 only for a live demo where you can't absorb that.
+# GPU ~24/7). 0 = scale to zero — the GPU starts when Anne is loaded (the app pings
+# /api/warm on connect + on entering chat) and shuts down after scaledown_window of
+# idle, so you only pay while it's actually serving. Flip to 1 only for a live demo
+# where you can't absorb the ~90s first-message cold start.
 MIN_CONTAINERS = 0
 # ------------------------------------------------------------------------
 
@@ -53,10 +52,11 @@ app = modal.App("goblin-operator-llm")
 @app.function(
     image=vllm_image,
     gpu=f"{GPU}:{N_GPU}",
-    # 0 = no GPU kept hot; a request boots one on demand (see MIN_CONTAINERS above).
+    # 0 = no GPU pinned; warmed on app-open by the frontend's /api/warm ping so the
+    # first answer is fast (see MIN_CONTAINERS above). 300s window keeps it alive
+    # through the connect→scan→chat flow so the pre-warm isn't wasted.
     min_containers=MIN_CONTAINERS,
-    # Die quickly after the last request so the idle tail is short (was 300s).
-    scaledown_window=60,
+    scaledown_window=300,
     timeout=20 * 60,
     volumes={"/root/.cache/huggingface": hf_cache, "/root/.cache/vllm": vllm_cache},
     secrets=[modal.Secret.from_name("operator-llm-key")],  # provides VLLM_API_KEY

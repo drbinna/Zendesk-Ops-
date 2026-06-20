@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ArrowRight, RotateCcw, ShieldCheck, Zap, Plug, MessageSquare, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import BlurredOrb from "@/components/blurred-orb";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { scan, agent, type Conn, type ScanResult, type Msg, type TraceEntry } from "@/lib/api";
+import { scan, agent, warm, type Conn, type ScanResult, type Msg, type TraceEntry } from "@/lib/api";
 
 const PETROL = "#0E6E6B";
 const HONEY = "#B26F1E";
@@ -27,6 +27,11 @@ export default function App() {
   const [conn, setConn] = useState<Conn | null>(null);
   const [data, setData] = useState<ScanResult | null>(null);
 
+  // Start the Modal GPU the moment the app is opened, so its ~1m cold start
+  // overlaps with the connect flow and chat is ready by the time you get there.
+  // No-op for the anthropic provider; idempotent if the container is already up.
+  useEffect(() => { warm(); }, []);
+
   return (
     <div className="relative min-h-screen w-full overflow-hidden flex items-center justify-center p-4 md:p-8 font-sans text-foreground" style={{ background: "radial-gradient(120% 120% at 50% 0%, #0F3431 0%, #0A2422 38%, #061514 100%)" }}>
       <BlurredOrb className="!w-[42rem] !h-[42rem] absolute -top-52 -right-40 opacity-70 blur-[100px]" style={{ background: `radial-gradient(circle at 30% 30%, #2BA39E, ${PETROL} 45%, transparent 72%)` }} />
@@ -46,10 +51,10 @@ export default function App() {
         <div className="min-h-[560px] p-8 md:p-11">
           <AnimatePresence mode="wait">
             {screen === "connect" && (
-              <Connect key="connect" onConnected={(c, d) => { setConn(c); setData(d); setScreen("scan"); }} />
+              <Connect key="connect" onConnected={(c, d) => { setConn(c); setData(d); warm(); setScreen("scan"); }} />
             )}
             {screen === "scan" && data && (
-              <Scan key="scan" data={data} onChat={() => { setScreen("chat"); }} onReset={() => { setConn(null); setData(null); setScreen("connect"); }} />
+              <Scan key="scan" data={data} onChat={() => { warm(); setScreen("chat"); }} onReset={() => { setConn(null); setData(null); setScreen("connect"); }} />
             )}
             {screen === "chat" && conn && data && <Chat key="chat" conn={conn} sub={data.account.subdomain} />}
           </AnimatePresence>
