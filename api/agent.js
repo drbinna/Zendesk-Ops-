@@ -54,11 +54,19 @@ const stripHtml = (h) => String(h || "")
   .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
   .replace(/\s+/g, " ").trim();
 const articleSlim = (a, n = 320) => ({ id: a.id, title: a.title, url: a.html_url, snippet: stripHtml(a.body).slice(0, n) });
+// Collapse near-duplicate ticket subjects (phone numbers, ids, dates) into one bucket,
+// e.g. "Abandoned Call from: Caller +1 (678) 717-7701" -> "abandoned call from caller",
+// so recurring topics surface by volume.
+const normSubject = (s) => String(s || "").toLowerCase()
+  .replace(/[^\w\s]/g, " ")   // punctuation -> space
+  .replace(/\b\d+\b/g, " ")   // standalone numbers (ids, phones, dates) -> space
+  .replace(/\s+/g, " ").trim();
 
 export const TOOLS = [
   { name: "zendesk_search", description: "Search tickets with Zendesk query syntax, e.g. 'type:ticket status:solved'. Read-only.", input_schema: { type: "object", properties: { query: { type: "string" }, per_page: { type: "number" } }, required: ["query"] } },
   { name: "zendesk_list_tickets", description: "List recent tickets, optional status filter (new/open/pending/solved/closed). Read-only.", input_schema: { type: "object", properties: { status: { type: "string" }, limit: { type: "number" } } } },
   { name: "zendesk_get_ticket", description: "Fetch one ticket by id. Read-only.", input_schema: { type: "object", properties: { id: { type: "number" } }, required: ["id"] } },
+  { name: "zendesk_ticket_topics", description: "Sample recent tickets and return the highest-volume recurring subject clusters with counts. Use this to find the top support issues, or to decide which knowledge base articles to write first. Read-only.", input_schema: { type: "object", properties: { sample: { type: "number", description: "How many recent tickets to scan (50-500, default 200)." } } } },
   { name: "zendesk_search_articles", description: "Search the Help Center knowledge base (Zendesk Guide) for articles by KEYWORD, e.g. 'refund policy' or 'reset password'. Requires a non-empty search term. To browse what's in the knowledge base without a keyword, use zendesk_list_articles instead. Read-only.", input_schema: { type: "object", properties: { query: { type: "string" }, per_page: { type: "number" } }, required: ["query"] } },
   { name: "zendesk_list_articles", description: "List/browse Help Center knowledge base articles, most recently updated first — no search keyword needed. Use this when the user wants to see what's IN the knowledge base, asks to browse, or isn't sure what to search for. Read-only.", input_schema: { type: "object", properties: { limit: { type: "number" } } } },
   { name: "zendesk_get_article", description: "Fetch the full text of one Help Center article by id (from a prior zendesk_search_articles or zendesk_list_articles result). Read-only.", input_schema: { type: "object", properties: { id: { type: "number" } }, required: ["id"] } },
@@ -78,6 +86,23 @@ export async function runTool(name, input, conn, mode) {
   if (name === "zendesk_search") { const out = await zd.call(`/search.json?query=${encodeURIComponent(input.query)}&per_page=${Math.min(input.per_page || 10, 100)}`); return { count: out.count, results: (out.results || []).slice(0, 12).map(slim) }; }
   if (name === "zendesk_list_tickets") { const out = await zd.call("/tickets.json?page[size]=100&sort_order=desc"); let t = (out.tickets || []).map(slim); if (input.status) t = t.filter((x) => x.status === String(input.status).toLowerCase()); return { count: t.length, tickets: t.slice(0, input.limit || 10) }; }
   if (name === "zendesk_get_ticket") { const out = await zd.call(`/tickets/${parseInt(input.id, 10)}.json`); return { ticket: slim(out.ticket) }; }
+  if (name === "zendesk_ticket_topics") {
+    const sample = Math.min(Math.max(parseInt(input.sample, 10) || 200, 50), 500);
+    const subjects = []; let cursor = null, fetched = 0;
+    for (let i = 0; i < Math.ceil(sample / 100); i++) {
+      const qp = cursor ? `page[size]=100&page[after]=${encodeURIComponent(cursor)}` : "page[size]=100&sort_order=desc";
+      const out = await zd.call(`/tickets.json?${qp}`);
+      const t = out.tickets || [];
+      for (const x of t) subjects.push(x.subject || "");
+      fetched += t.length;
+      cursor = out.meta && out.meta.has_more ? out.meta.after_cursor : null;
+      if (!cursor || !t.length) break;
+    }
+    const counts = new Map(), example = new Map();
+    for (const s of subjects) { const k = normSubject(s); if (!k) continue; counts.set(k, (counts.get(k) || 0) + 1); if (!example.has(k)) example.set(k, s); }
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30).map(([topic, count]) => ({ topic, count, example: example.get(topic) }));
+    return { sampled: fetched, distinct_topics: counts.size, top };
+  }
   if (name === "zendesk_search_articles") {
     const q = (input.query || "").trim();
     // Zendesk's Search Articles endpoint 400s without a search param — never send an empty query.
@@ -136,6 +161,7 @@ function summarize(out) {
 const SYSTEM = (sub, mode) => `You are Anne, the AI operator for the Zendesk account "${sub}". You help the user run it by chatting.
 Use your tools to read and act — never invent ticket numbers, counts, or statuses; only report what tools return.
 You can also read this account's Help Center knowledge base. To browse what's in it — when the user asks what's in the KB, says to look it up, or isn't sure what to search — call zendesk_list_articles (no keyword needed). For a specific how-to, policy, or "where do I…" question, call zendesk_search_articles with a KEYWORD, then zendesk_get_article for the full text, and answer from the article — reference its title and link. Never call zendesk_search_articles without a keyword. If nothing comes back, say the knowledge base has no matching article rather than guessing.
+To find the highest-volume support issues or seed the knowledge base, call zendesk_ticket_topics — it samples recent tickets and returns recurring subject clusters with counts. Merge near-duplicate clusters into clean, human-readable topics, present them ranked by volume (aim for a top ~20), and offer to draft KB articles for the biggest ones.
 Before any destructive or bulk write (closing/solving multiple tickets, refunds, mass updates), FIRST call goblin_verify_resolution, summarize the result, and ask the user to confirm before you execute the write.
 ${mode === "live" ? "You are in LIVE mode: writes really happen, so confirm first." : "You are in DRY-RUN mode: write tools return simulated results without changing anything. Make clear what WOULD happen."}
 Keep replies short and conversational. When you hand off to an embodied session, share the link.`;
