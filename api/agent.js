@@ -61,6 +61,26 @@ const normSubject = (s) => String(s || "").toLowerCase()
   .replace(/[^\w\s]/g, " ")   // punctuation -> space
   .replace(/\b\d+\b/g, " ")   // standalone numbers (ids, phones, dates) -> space
   .replace(/\s+/g, " ").trim();
+// Guide article bodies are HTML. Anne tends to draft in markdown/plain text, so do a
+// light conversion (headings, lists, bold/italic, paragraphs). Pass through real HTML.
+function mdToHtml(src) {
+  const t = String(src || "").trim();
+  if (/<(p|h[1-6]|ul|ol|li|br|div|strong|em)\b/i.test(t)) return t;
+  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\*(.+?)\*/g, "<em>$1</em>");
+  const out = []; let list = null;
+  const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  for (const raw of t.split(/\r?\n/)) {
+    const line = raw.trim(); let m;
+    if (!line) { closeList(); continue; }
+    if ((m = line.match(/^#{1,3}\s+(.*)/))) { closeList(); out.push(`<h2>${inline(m[1])}</h2>`); }
+    else if ((m = line.match(/^[-*]\s+(.*)/))) { if (list !== "ul") { closeList(); out.push("<ul>"); list = "ul"; } out.push(`<li>${inline(m[1])}</li>`); }
+    else if ((m = line.match(/^\d+\.\s+(.*)/))) { if (list !== "ol") { closeList(); out.push("<ol>"); list = "ol"; } out.push(`<li>${inline(m[1])}</li>`); }
+    else { closeList(); out.push(`<p>${inline(line)}</p>`); }
+  }
+  closeList();
+  return out.join("\n");
+}
 
 export const TOOLS = [
   { name: "zendesk_search", description: "Search tickets with Zendesk query syntax, e.g. 'type:ticket status:solved'. Read-only.", input_schema: { type: "object", properties: { query: { type: "string" }, per_page: { type: "number" } }, required: ["query"] } },
@@ -70,6 +90,8 @@ export const TOOLS = [
   { name: "zendesk_search_articles", description: "Search the Help Center knowledge base (Zendesk Guide) for articles by KEYWORD, e.g. 'refund policy' or 'reset password'. Requires a non-empty search term. To browse what's in the knowledge base without a keyword, use zendesk_list_articles instead. Read-only.", input_schema: { type: "object", properties: { query: { type: "string" }, per_page: { type: "number" } }, required: ["query"] } },
   { name: "zendesk_list_articles", description: "List/browse Help Center knowledge base articles, most recently updated first — no search keyword needed. Use this when the user wants to see what's IN the knowledge base, asks to browse, or isn't sure what to search for. Read-only.", input_schema: { type: "object", properties: { limit: { type: "number" } } } },
   { name: "zendesk_get_article", description: "Fetch the full text of one Help Center article by id (from a prior zendesk_search_articles or zendesk_list_articles result). Read-only.", input_schema: { type: "object", properties: { id: { type: "number" } }, required: ["id"] } },
+  { name: "zendesk_list_sections", description: "List Help Center (Guide) sections, so a new article can be filed into one. Read-only.", input_schema: { type: "object", properties: {} } },
+  { name: "zendesk_create_article", description: "Create a NEW Help Center article as an UNPUBLISHED DRAFT in a section. Provide section_id (from zendesk_list_sections), title, and body (markdown or simple HTML). Always a draft for review — never publishes live. Write.", input_schema: { type: "object", properties: { section_id: { type: "number" }, title: { type: "string" }, body: { type: "string" }, locale: { type: "string" }, permission_group_id: { type: "number" } }, required: ["section_id", "title", "body"] } },
   { name: "zendesk_add_note", description: "Add a private internal note to a ticket. Write.", input_schema: { type: "object", properties: { ticket_id: { type: "number" }, note: { type: "string" } }, required: ["ticket_id", "note"] } },
   { name: "zendesk_update_ticket", description: "Update a ticket: status (open/pending/solved), priority, or add a public reply. Accepts a single id or comma-separated ids for bulk. Write.", input_schema: { type: "object", properties: { ticket_ids: { type: "string" }, status: { type: "string" }, priority: { type: "string" }, reply: { type: "string" } }, required: ["ticket_ids"] } },
   { name: "zendesk_create_ticket", description: "Open a new ticket. Write.", input_schema: { type: "object", properties: { subject: { type: "string" }, description: { type: "string" }, priority: { type: "string" } }, required: ["subject", "description"] } },
@@ -77,7 +99,7 @@ export const TOOLS = [
   { name: "goblin_start_embodied_session", description: "Hand off to a live face+voice persona session (anne/gabriel/mia) and return a link. Use when a customer needs a human-feeling touch.", input_schema: { type: "object", properties: { persona: { type: "string" }, context: { type: "string" } } } },
 ];
 
-const isWrite = (n) => ["zendesk_add_note", "zendesk_update_ticket", "zendesk_create_ticket"].includes(n);
+const isWrite = (n) => ["zendesk_add_note", "zendesk_update_ticket", "zendesk_create_ticket", "zendesk_create_article"].includes(n);
 
 export async function runTool(name, input, conn, mode) {
   const dry = mode !== "live";
@@ -128,6 +150,31 @@ export async function runTool(name, input, conn, mode) {
     }
   }
   if (name === "zendesk_get_article") { const out = await zd.call(`/help_center/articles/${parseInt(input.id, 10)}.json`); const a = out.article || {}; return { article: { id: a.id, title: a.title, url: a.html_url, body: stripHtml(a.body).slice(0, 2000) }, message: `Article: ${a.title || input.id}` }; }
+  if (name === "zendesk_list_sections") {
+    try {
+      const out = await zd.call("/help_center/sections.json?page[size]=100");
+      const sections = (out.sections || []).map((s) => ({ id: s.id, name: s.name, category_id: s.category_id, locale: s.locale }));
+      return { count: sections.length, sections: sections.slice(0, 50), ...(sections.length ? {} : { note: "No sections in Guide yet — create a category and section in the help center first, then I can file drafts there." }) };
+    } catch (e) {
+      if (/\b40[34]\b/.test(e.message)) return { count: 0, sections: [], note: "No Help Center is enabled for this account, or this agent can't read Guide." };
+      throw e;
+    }
+  }
+  if (name === "zendesk_create_article") {
+    const sectionId = parseInt(input.section_id, 10);
+    if (!sectionId) return { error: "section_id is required — call zendesk_list_sections to pick one." };
+    if (!input.title || !input.body) return { error: "title and body are required." };
+    let pg = parseInt(input.permission_group_id, 10) || null;
+    if (!pg) {
+      // permission_group_id is required by Guide; resolve a sensible default.
+      try { const g = await zd.call("/guide/permission_groups.json"); const list = g.permission_groups || []; const pick = list.find((x) => /manager|agent/i.test(x.name)) || list[0]; pg = pick ? pick.id : null; } catch { /* surfaced below if truly needed */ }
+    }
+    const article = { title: input.title, body: mdToHtml(input.body), locale: (input.locale || "en-us").toLowerCase(), draft: true };
+    if (pg) article.permission_group_id = pg;
+    const out = await zd.call(`/help_center/sections/${sectionId}/articles.json`, { method: "POST", body: JSON.stringify({ article }) });
+    const a = out.article || {};
+    return { ok: true, article: { id: a.id, title: a.title, url: a.html_url, draft: a.draft }, message: `Draft article created: "${a.title}" (#${a.id}) — unpublished, ready for review.` };
+  }
   if (name === "zendesk_add_note") { const out = await zd.call(`/tickets/${parseInt(input.ticket_id, 10)}.json`, { method: "PUT", body: JSON.stringify({ ticket: { comment: { body: `[Operator] ${input.note}`, public: false } } }) }); return { ok: true, ticket: slim(out.ticket), message: `Internal note added to #${input.ticket_id}` }; }
   if (name === "zendesk_update_ticket") {
     const ids = String(input.ticket_ids).split(",").map((x) => parseInt(x.trim(), 10)).filter(Boolean);
@@ -162,6 +209,7 @@ const SYSTEM = (sub, mode) => `You are Anne, the AI operator for the Zendesk acc
 Use your tools to read and act — never invent ticket numbers, counts, or statuses; only report what tools return.
 You can also read this account's Help Center knowledge base. To browse what's in it — when the user asks what's in the KB, says to look it up, or isn't sure what to search — call zendesk_list_articles (no keyword needed). For a specific how-to, policy, or "where do I…" question, call zendesk_search_articles with a KEYWORD, then zendesk_get_article for the full text, and answer from the article — reference its title and link. Never call zendesk_search_articles without a keyword. If nothing comes back, say the knowledge base has no matching article rather than guessing.
 To find the highest-volume support issues or seed the knowledge base, call zendesk_ticket_topics — it samples recent tickets and returns recurring subject clusters with counts. Merge near-duplicate clusters into clean, human-readable topics, present them ranked by volume (aim for a top ~20), and offer to draft KB articles for the biggest ones.
+You can draft and file knowledge base articles. For a topic, write a clear article structured as: a question-style title, a concise answer, then numbered steps. Show the draft to the user first and only file it after they approve. To file, call zendesk_list_sections to choose a section, then zendesk_create_article — it always creates an UNPUBLISHED DRAFT for review, never a live article. If Guide has no sections yet, just give the user the drafted text to paste in.
 Before any destructive or bulk write (closing/solving multiple tickets, refunds, mass updates), FIRST call goblin_verify_resolution, summarize the result, and ask the user to confirm before you execute the write.
 ${mode === "live" ? "You are in LIVE mode: writes really happen, so confirm first." : "You are in DRY-RUN mode: write tools return simulated results without changing anything. Make clear what WOULD happen."}
 Keep replies short and conversational. When you hand off to an embodied session, share the link.`;
