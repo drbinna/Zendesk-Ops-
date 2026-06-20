@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowRight, RotateCcw, ShieldCheck, Zap, Plug, MessageSquare, LogOut } from "lucide-react";
+import { ArrowRight, RotateCcw, ShieldCheck, Zap, Plug, MessageSquare, LogOut, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import BlurredOrb from "@/components/blurred-orb";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { scan, agent, warm, type Conn, type ScanResult, type Msg, type TraceEntry } from "@/lib/api";
+import { scan, agent, warm, warmStatus, type Conn, type ScanResult, type Msg, type TraceEntry } from "@/lib/api";
 
 const PETROL = "#0E6E6B";
 const HONEY = "#B26F1E";
@@ -19,7 +19,7 @@ const stripToolNoise = (t: string) =>
     .replace(/[ \t]{2,}/g, " ")
     .trim();
 
-type Screen = "connect" | "scan" | "chat";
+type Screen = "connect" | "scan" | "warming" | "chat";
 type ChatMsg = { role: "user" | "anne" | "sys"; text: string };
 
 export default function App() {
@@ -54,8 +54,9 @@ export default function App() {
               <Connect key="connect" onConnected={(c, d) => { setConn(c); setData(d); warm(); setScreen("scan"); }} />
             )}
             {screen === "scan" && data && (
-              <Scan key="scan" data={data} onChat={() => { warm(); setScreen("chat"); }} onReset={() => { setConn(null); setData(null); setScreen("connect"); }} />
+              <Scan key="scan" data={data} onChat={() => { warm(); setScreen("warming"); }} onReset={() => { setConn(null); setData(null); setScreen("connect"); }} />
             )}
+            {screen === "warming" && <Warming key="warming" onReady={() => setScreen("chat")} />}
             {screen === "chat" && conn && data && <Chat key="chat" conn={conn} sub={data.account.subdomain} />}
           </AnimatePresence>
         </div>
@@ -189,6 +190,93 @@ function Scan({ data, onChat, onReset }: { data: ScanResult; onChat: () => void;
           </div>
         </div>
       </div>
+    </motion.div>
+  );
+}
+
+function Warming({ onReady }: { onReady: () => void }) {
+  const [ready, setReady] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+
+  // Poll readiness without stacking requests: await one, then schedule the next.
+  useEffect(() => {
+    let cancelled = false;
+    let t: ReturnType<typeof setTimeout>;
+    async function tick() {
+      if (cancelled) return;
+      try {
+        const s = await warmStatus();
+        if (cancelled) return;
+        if (!s.warming || s.ready) { setReady(true); return; }
+      } catch { /* keep trying */ }
+      t = setTimeout(tick, 3000);
+    }
+    tick();
+    return () => { cancelled = true; clearTimeout(t); };
+  }, []);
+
+  // Elapsed clock drives the progress estimate + status copy.
+  useEffect(() => {
+    const id = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Once she's up, hold a brief "online" beat, then hand off to chat.
+  useEffect(() => {
+    if (!ready) return;
+    const id = setTimeout(onReady, 700);
+    return () => clearTimeout(id);
+  }, [ready, onReady]);
+
+  const stage = ready ? "Anne is online"
+    : elapsed < 12 ? "Allocating a GPU…"
+    : elapsed < 35 ? "Loading the model onto the A10G…"
+    : elapsed < 60 ? "Warming the inference engine…"
+    : "Almost there…";
+  // Estimate toward ~75s but never claim 100% until she's actually ready.
+  const pct = ready ? 100 : Math.min(92, Math.round((elapsed / 75) * 100));
+  const slow = !ready && elapsed > 90;
+
+  return (
+    <motion.div {...rise} className="min-h-[480px] flex flex-col items-center justify-center text-center">
+      <div className="relative mb-8 grid place-items-center">
+        <motion.span aria-hidden className="absolute rounded-full" style={{ width: 140, height: 140, background: `radial-gradient(circle, ${PETROL}33, transparent 70%)` }}
+          animate={{ scale: [1, 1.25, 1], opacity: [0.6, 0.2, 0.6] }} transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }} />
+        <motion.span aria-hidden className="absolute rounded-full border-2" style={{ width: 96, height: 96, borderColor: "#D7E6E4", borderTopColor: HONEY }}
+          animate={{ rotate: ready ? 0 : 360 }} transition={ready ? { duration: 0.4 } : { duration: 1.4, repeat: Infinity, ease: "linear" }} />
+        <div className="size-[70px] rounded-full grid place-items-center" style={{ background: "#0E2B2A" }}>
+          {ready
+            ? <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 320, damping: 15 }}><Check className="size-8" style={{ color: "#7FE0B0" }} /></motion.span>
+            : <img src="/favicon.svg" alt="" className="size-9 opacity-90" />}
+        </div>
+      </div>
+
+      <Eyebrow>{ready ? "Ready" : "Waking Anne up"}</Eyebrow>
+      <h2 className="font-heading text-2xl md:text-3xl font-bold tracking-tight mb-2">
+        {ready ? <>Anne is <span style={{ color: PETROL }}>online.</span></> : <>Spinning up Anne's <span style={{ color: HONEY }}>operator brain.</span></>}
+      </h2>
+      <p className="text-[14px] leading-relaxed text-muted-foreground max-w-sm mb-7">
+        {ready
+          ? "Handing you to the operator chat…"
+          : "Her model runs on a GPU that scales to zero, so the first wake takes a moment. It stays hot for the rest of your session."}
+      </p>
+
+      <div className="w-full max-w-sm">
+        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#E8F0EF" }}>
+          <motion.div className="h-full rounded-full" style={{ background: `linear-gradient(90deg, ${PETROL}, ${HONEY})` }}
+            animate={{ width: `${pct}%` }} transition={{ ease: "easeOut", duration: 0.6 }} />
+        </div>
+        <div className="flex items-center justify-between mt-2 font-mono text-[11px] text-muted-foreground">
+          <span>{stage}</span>
+          <span>{ready ? "100%" : `${elapsed}s`}</span>
+        </div>
+      </div>
+
+      {slow && (
+        <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} onClick={onReady} className="mt-6 font-mono text-[11px]" style={{ color: PETROL }}>
+          Taking a while — open the chat anyway →
+        </motion.button>
+      )}
     </motion.div>
   );
 }

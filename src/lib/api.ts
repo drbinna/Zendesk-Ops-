@@ -27,6 +27,21 @@ export function warm(): void {
   fetch("/api/warm").catch(() => {});
 }
 
+export type WarmStatus = { ok: boolean; warming: boolean; ready: boolean };
+
+// Poll target for the warming screen. `warming:false` means there's no GPU to wait
+// on (anthropic provider, or no Modal base configured) — treat as ready. Otherwise
+// `ready:true` once the Modal /health check passes. Network errors -> keep waiting.
+export async function warmStatus(): Promise<WarmStatus> {
+  try {
+    const r = await fetch("/api/warm");
+    const d = await r.json();
+    return { ok: !!d.ok, warming: !!d.warming, ready: !!d.ready };
+  } catch {
+    return { ok: false, warming: true, ready: false };
+  }
+}
+
 export async function agent(connection: Conn, messages: Msg[], mode: string): Promise<AgentResult> {
   const r = await fetch("/api/agent", {
     method: "POST",
