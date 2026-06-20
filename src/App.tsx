@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ArrowRight, RotateCcw, ShieldCheck, Zap, Plug, MessageSquare, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,11 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>("connect");
   const [conn, setConn] = useState<Conn | null>(null);
   const [data, setData] = useState<ScanResult | null>(null);
+
+  // Start the Modal GPU the moment the app is opened, so its ~1m cold start
+  // overlaps with the connect flow and chat is ready by the time you get there.
+  // No-op for the anthropic provider; idempotent if the container is already up.
+  useEffect(() => { warm(); }, []);
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden flex items-center justify-center p-4 md:p-8 font-sans text-foreground" style={{ background: "radial-gradient(120% 120% at 50% 0%, #0F3431 0%, #0A2422 38%, #061514 100%)" }}>
