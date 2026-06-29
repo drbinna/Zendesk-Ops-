@@ -76,15 +76,17 @@ export default async function handler(req, res) {
   const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
   const ticketId = parseInt(body.ticket_id, 10);
   if (!ticketId) return res.status(400).json({ ok: false, error: "ticket_id required" });
-  const question = `${String(body.subject || "").trim()}\n\n${String(body.description || "").trim()}`.trim();
-  if (question.length < 3) return res.status(200).json({ ok: true, skipped: "empty question" });
 
   try {
-    // Idempotency: never act twice on the same ticket.
+    // Load the ticket: gives us idempotency tags + the question text (safer than
+    // passing the email body through the webhook JSON, where quotes/newlines break it).
     const t = await zd(`/tickets/${ticketId}.json`);
-    const tags = t.ticket?.tags || [];
+    const tk = t.ticket || {};
+    const tags = tk.tags || [];
     if ([TAG_PUBLIC, TAG_DRAFT, TAG_HUMAN].some((x) => tags.includes(x)))
       return res.status(200).json({ ok: true, skipped: "already handled" });
+    const question = `${String(tk.subject || "").trim()}\n\n${String(tk.description || "").trim()}`.trim();
+    if (question.length < 3) return res.status(200).json({ ok: true, skipped: "empty question" });
 
     // 1) Retrieve from the published Help Center.
     let answer = null, sources = [];
