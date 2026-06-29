@@ -68,7 +68,9 @@ async function zd(path, init) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: "POST only" });
   if (!process.env.AUTOREPLY_SECRET) return res.status(500).json({ ok: false, error: "AUTOREPLY_SECRET is not set." });
-  if ((req.headers["x-autoreply-secret"] || "") !== process.env.AUTOREPLY_SECRET)
+  const provided = String(req.headers["x-autoreply-secret"] || "") ||
+    String(req.headers["authorization"] || "").replace(/^Bearer\s+/i, "");
+  if (provided !== process.env.AUTOREPLY_SECRET)
     return res.status(401).json({ ok: false, error: "unauthorized" });
   if (!CONN.subdomain || !CONN.email || !CONN.token)
     return res.status(500).json({ ok: false, error: "HELP_SUBDOMAIN, HELP_EMAIL, HELP_TOKEN must be set." });
