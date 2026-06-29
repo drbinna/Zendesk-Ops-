@@ -93,6 +93,7 @@ export const TOOLS = [
   { name: "zendesk_list_sections", description: "List Help Center (Guide) sections, so a new article can be filed into one. Read-only.", input_schema: { type: "object", properties: {} } },
   { name: "zendesk_create_article", description: "Create a NEW Help Center article as an UNPUBLISHED DRAFT in a section. Provide section_id (from zendesk_list_sections), title, and body (markdown or simple HTML). Always a draft for review — never publishes live. Write.", input_schema: { type: "object", properties: { section_id: { type: "number" }, title: { type: "string" }, body: { type: "string" }, locale: { type: "string" }, permission_group_id: { type: "number" } }, required: ["section_id", "title", "body"] } },
   { name: "zendesk_log_knowledge_gap", description: "Log a customer question the knowledge base could NOT answer as a Zendesk ticket tagged 'knowledge-gap' (deduped against existing gaps). Use this when a question has no matching article, so it becomes a backlog item to write an article for. Write.", input_schema: { type: "object", properties: { question: { type: "string" } }, required: ["question"] } },
+  { name: "zendesk_create_macro", description: "Create a reusable Zendesk macro (canned response) from text — e.g. an onboarding welcome message, a top-resources note, or a 7-/30-day check-in template that agents or automations can apply in one click. Provide title and body (the reply text). Write.", input_schema: { type: "object", properties: { title: { type: "string" }, body: { type: "string" }, tags: { type: "array", items: { type: "string" } } }, required: ["title", "body"] } },
   { name: "zendesk_add_note", description: "Add a private internal note to a ticket. Write.", input_schema: { type: "object", properties: { ticket_id: { type: "number" }, note: { type: "string" } }, required: ["ticket_id", "note"] } },
   { name: "zendesk_update_ticket", description: "Update a ticket: status (open/pending/solved), priority, or add a public reply. Accepts a single id or comma-separated ids for bulk. Write.", input_schema: { type: "object", properties: { ticket_ids: { type: "string" }, status: { type: "string" }, priority: { type: "string" }, reply: { type: "string" } }, required: ["ticket_ids"] } },
   { name: "zendesk_create_ticket", description: "Open a new ticket. Write.", input_schema: { type: "object", properties: { subject: { type: "string" }, description: { type: "string" }, priority: { type: "string" } }, required: ["subject", "description"] } },
@@ -100,7 +101,7 @@ export const TOOLS = [
   { name: "goblin_start_embodied_session", description: "Hand off to a live face+voice persona session (anne/gabriel/mia) and return a link. Use when a customer needs a human-feeling touch.", input_schema: { type: "object", properties: { persona: { type: "string" }, context: { type: "string" } } } },
 ];
 
-const isWrite = (n) => ["zendesk_add_note", "zendesk_update_ticket", "zendesk_create_ticket", "zendesk_create_article", "zendesk_log_knowledge_gap"].includes(n);
+const isWrite = (n) => ["zendesk_add_note", "zendesk_update_ticket", "zendesk_create_ticket", "zendesk_create_article", "zendesk_log_knowledge_gap", "zendesk_create_macro"].includes(n);
 
 export async function runTool(name, input, conn, mode) {
   const dry = mode !== "live";
@@ -195,6 +196,14 @@ export async function runTool(name, input, conn, mode) {
     const out = await zd.call("/tickets.json", { method: "POST", body: JSON.stringify({ ticket: { subject, comment: { body, public: false }, priority: "low", tags: ["knowledge-gap"] } }) });
     return { ok: true, deduped: false, ticket_id: out.ticket.id, message: `Knowledge gap logged as #${out.ticket.id} (tagged knowledge-gap).` };
   }
+  if (name === "zendesk_create_macro") {
+    if (!input.title || !input.body) return { error: "title and body are required." };
+    const actions = [{ field: "comment_value", value: String(input.body) }];
+    if (Array.isArray(input.tags) && input.tags.length) actions.push({ field: "set_tags", value: input.tags.join(" ") });
+    const out = await zd.call("/macros.json", { method: "POST", body: JSON.stringify({ macro: { title: input.title, actions, active: input.active === false ? false : true } }) });
+    const m = out.macro || {};
+    return { ok: true, macro: { id: m.id, title: m.title, active: m.active }, message: `Macro created: "${m.title}" (#${m.id}) — agents can apply it from the macro list.` };
+  }
   if (name === "zendesk_add_note") { const out = await zd.call(`/tickets/${parseInt(input.ticket_id, 10)}.json`, { method: "PUT", body: JSON.stringify({ ticket: { comment: { body: `[Operator] ${input.note}`, public: false } } }) }); return { ok: true, ticket: slim(out.ticket), message: `Internal note added to #${input.ticket_id}` }; }
   if (name === "zendesk_update_ticket") {
     const ids = String(input.ticket_ids).split(",").map((x) => parseInt(x.trim(), 10)).filter(Boolean);
@@ -231,6 +240,7 @@ You can also read this account's Help Center knowledge base. To browse what's in
 To find the highest-volume support issues or seed the knowledge base, call zendesk_ticket_topics — it samples recent tickets and returns recurring subject clusters with counts. Merge near-duplicate clusters into clean, human-readable topics, present them ranked by volume (aim for a top ~20), and offer to draft KB articles for the biggest ones.
 You can draft and file knowledge base articles. For a topic, write a clear article structured as: a question-style title, a concise answer, then numbered steps. Show the draft to the user first and only file it after they approve. To file, call zendesk_list_sections to choose a section, then zendesk_create_article — it always creates an UNPUBLISHED DRAFT for review, never a live article. If Guide has no sections yet, just give the user the drafted text to paste in.
 Deflection / self-service: when answering a customer support question, search the knowledge base and answer ONLY from a matching article, citing its title and link — never invent an answer. If no article covers the question, say the knowledge base has no answer yet and offer to log it with zendesk_log_knowledge_gap (a deduped 'knowledge-gap' ticket). That backlog of unanswered questions is how the KB improves: the most frequent gaps become the next articles to write.
+Onboarding flows: you can build proactive onboarding. Grounded in the knowledge base and the top ticket topics, generate (a) a new-customer onboarding checklist, (b) a proactive welcome message that links the most useful articles, and (c) 7-day and 30-day check-in templates. Show the content to the user first; once they approve a reusable piece, save it as a Zendesk macro with zendesk_create_macro so agents or automations can apply it in one click.
 Before any destructive or bulk write (closing/solving multiple tickets, refunds, mass updates), FIRST call goblin_verify_resolution, summarize the result, and ask the user to confirm before you execute the write.
 ${mode === "live" ? "You are in LIVE mode: writes really happen, so confirm first." : "You are in DRY-RUN mode: write tools return simulated results without changing anything. Make clear what WOULD happen."}
 Keep replies short and conversational. When you hand off to an embodied session, share the link.`;
