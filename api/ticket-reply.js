@@ -115,7 +115,7 @@ export default async function handler(req, res) {
     // 2) No confident KB answer → flag for a human, never guess.
     if (!answer) {
       await zd(`/tickets/${ticketId}.json`, { method: "PUT", body: JSON.stringify({
-        ticket: { comment: { body: "Anne: no confident Help Center answer for this ticket — leaving it for a human.", public: false }, additional_tags: [TAG_HUMAN] } }) });
+        ticket: { comment: { body: "Anne: no confident Help Center answer for this ticket — leaving it for a human.", public: false }, tags: [...new Set([...tags, TAG_HUMAN])] } }) });
       return res.status(200).json({ ok: true, answered: false, action: "flagged_for_human" });
     }
 
@@ -124,12 +124,12 @@ export default async function handler(req, res) {
     if (MODE === "public") {
       const reply = `${answer}${srcLines}\n\n— Answered automatically from our Help Center. Just reply to this email if you'd like a person to take a look.`;
       await zd(`/tickets/${ticketId}.json`, { method: "PUT", body: JSON.stringify({
-        ticket: { comment: { body: reply, public: true }, additional_tags: [TAG_PUBLIC] } }) });
+        ticket: { comment: { body: reply, public: true }, tags: [...new Set([...tags, TAG_PUBLIC])] } }) });
       return res.status(200).json({ ok: true, answered: true, mode: "public" });
     }
     const note = `Anne drafted this reply from the Help Center — NOT sent. Review and send if it's good:\n\n${answer}${srcLines}`;
     await zd(`/tickets/${ticketId}.json`, { method: "PUT", body: JSON.stringify({
-      ticket: { comment: { body: note, public: false }, additional_tags: [TAG_DRAFT] } }) });
+      ticket: { comment: { body: note, public: false }, tags: [...new Set([...tags, TAG_DRAFT])] } }) });
     return res.status(200).json({ ok: true, answered: true, mode: "draft" });
   } catch (e) {
     return res.status(502).json({ ok: false, error: e.message || "error" });
