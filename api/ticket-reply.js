@@ -26,7 +26,7 @@ const MODEL = process.env.OPERATOR_MODEL || (PROVIDER === "openai" ? "Qwen/Qwen2
 const OAI_BASE = (process.env.OPERATOR_BASE_URL || "").replace(/\/+$/, "");
 const OAI_KEY = process.env.OPERATOR_API_KEY || "";
 const NO_ANSWER = "NO_ANSWER";
-const MODE = (process.env.AUTOREPLY_MODE || "draft").toLowerCase();
+const MODE = (process.env.AUTOREPLY_MODE || "draft").trim().toLowerCase();
 const TAG_PUBLIC = "anne-auto-replied";
 const TAG_DRAFT = "anne-draft-reply";
 const TAG_HUMAN = "anne-needs-human";
@@ -66,12 +66,19 @@ async function zd(path, init) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "POST only" });
   if (!process.env.AUTOREPLY_SECRET) return res.status(500).json({ ok: false, error: "AUTOREPLY_SECRET is not set." });
   const provided = String(req.headers["x-autoreply-secret"] || "") ||
     String(req.headers["authorization"] || "").replace(/^Bearer\s+/i, "");
   if (provided !== process.env.AUTOREPLY_SECRET)
     return res.status(401).json({ ok: false, error: "unauthorized" });
+
+  // Secret-gated diagnostic: report the config this deployment is actually running.
+  if (req.method === "GET") {
+    return res.status(200).json({ ok: true, mode: MODE, provider: PROVIDER, model: MODEL,
+      mode_raw: process.env.AUTOREPLY_MODE ?? null,
+      hasZendeskCreds: !!(CONN.subdomain && CONN.email && CONN.token) });
+  }
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "POST or GET only" });
   if (!CONN.subdomain || !CONN.email || !CONN.token)
     return res.status(500).json({ ok: false, error: "HELP_SUBDOMAIN, HELP_EMAIL, HELP_TOKEN must be set." });
 
